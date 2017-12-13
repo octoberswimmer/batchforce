@@ -37,11 +37,14 @@ func update(session *force.Force, records <-chan force.ForceRecord, done chan<- 
 	sendBatch := func() {
 		updates, err := json.Marshal(batch)
 		if err != nil {
-			fmt.Printf("Failed to enqueue batch: " + err.Error())
+			fmt.Println("Failed to serialize batch: " + err.Error())
 			os.Exit(1)
 		}
 		fmt.Printf("Adding batch of %d records to job %s\n", len(batch), jobInfo.Id)
-		session.AddBatchToJob(string(updates), jobInfo)
+		_, err = session.AddBatchToJob(string(updates), jobInfo)
+		if err != nil {
+			fmt.Println("Failed to enqueue batch: " + err.Error())
+		}
 		batch = make([]force.ForceRecord, 0, 10000)
 	}
 
