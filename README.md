@@ -15,7 +15,7 @@ Example
 package main
 
 import (
-	batch "github.com/cwarden/batchforce"
+	batch "github.com/octoberswimmer/batchforce"
 	force "github.com/heroku/force/lib"
 	"time"
 )
