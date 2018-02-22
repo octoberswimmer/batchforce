@@ -3,7 +3,7 @@ package batch
 import (
 	"encoding/json"
 	"fmt"
-	force "github.com/heroku/force/lib"
+	force "github.com/ForceCLI/force/lib"
 	"os"
 	"time"
 )
@@ -67,7 +67,7 @@ func update(session *force.Force, records <-chan force.ForceRecord, failures cha
 			fmt.Println("Failed to get bulk job status: " + err.Error())
 			os.Exit(1)
 		}
-		force.DisplayJobInfo(status)
+		force.DisplayJobInfo(status, os.Stdout)
 		if status.NumberBatchesCompleted+status.NumberBatchesFailed == status.NumberBatchesTotal {
 			break
 		}
