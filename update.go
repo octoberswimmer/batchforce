@@ -99,13 +99,13 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
-	numberFailers := make(chan int)
+	numberFailures := make(chan int)
 	go processRecords(queried, updates, converter)
-	go update(session, updates, numberFailers, jobOptions...)
+	go update(session, updates, numberFailures, jobOptions...)
 	err = session.QueryAndSend(query, queried)
 	if err != nil {
 		fmt.Println("Query failed: " + err.Error())
 		os.Exit(1)
 	}
-	return <-numberFailers
+	return <-numberFailures
 }
