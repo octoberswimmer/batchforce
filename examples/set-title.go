@@ -1,7 +1,7 @@
 package main
 
 import (
-	force "github.com/heroku/force/lib"
+	force "github.com/ForceCLI/force/lib"
 	batch "github.com/octoberswimmer/batchforce"
 	"time"
 )
