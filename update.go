@@ -1,16 +1,46 @@
 package batch
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	force "github.com/ForceCLI/force/lib"
+	"github.com/clbanning/mxj"
+
 	"os"
+	"strings"
 	"time"
 )
 
 type BulkJob struct {
 	force.JobInfo
 	BatchSize int
+}
+
+type Batch []force.ForceRecord
+
+func (batch Batch) marshallForBulkJob(job BulkJob) (updates []byte, err error) {
+	switch strings.ToUpper(job.ContentType) {
+	case "JSON":
+		updates, err = json.Marshal(batch)
+	case "XML":
+		xmlData := new(bytes.Buffer)
+
+		xmlData.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+			<sObjects xmlns="http://www.force.com/2009/06/asyncapi/dataload">`))
+		for _, record := range batch {
+			mv := mxj.Map(record)
+			err = mv.XmlIndentWriter(xmlData, "", "  ", "sObject")
+			if err != nil {
+				return
+			}
+		}
+		xmlData.Write([]byte(`</sObjects>`))
+		updates = xmlData.Bytes()
+	default:
+		err = fmt.Errorf("Unsupported ContentType: " + job.ContentType)
+	}
+	return
 }
 
 func update(session *force.Force, records <-chan force.ForceRecord, failures chan<- int, jobOptions ...func(*BulkJob)) {
@@ -30,10 +60,10 @@ func update(session *force.Force, records <-chan force.ForceRecord, failures cha
 		os.Exit(1)
 	}
 	fmt.Printf("Created job %s\n", jobInfo.Id)
-	batch := make([]force.ForceRecord, 0, job.BatchSize)
+	batch := make(Batch, 0, job.BatchSize)
 
 	sendBatch := func() {
-		updates, err := json.Marshal(batch)
+		updates, err := batch.marshallForBulkJob(job)
 		if err != nil {
 			fmt.Println("Failed to serialize batch: " + err.Error())
 			os.Exit(1)
@@ -42,8 +72,9 @@ func update(session *force.Force, records <-chan force.ForceRecord, failures cha
 		_, err = session.AddBatchToJob(string(updates), jobInfo)
 		if err != nil {
 			fmt.Println("Failed to enqueue batch: " + err.Error())
+			os.Exit(1)
 		}
-		batch = make([]force.ForceRecord, 0, job.BatchSize)
+		batch = make(Batch, 0, job.BatchSize)
 	}
 
 	for record := range records {
