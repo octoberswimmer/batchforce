@@ -2,7 +2,7 @@ package main
 
 import (
 	force "github.com/ForceCLI/force/lib"
-	batch "github.com/octoberswimmer/batchforce"
+	"octoberswimmer/batchforce"
 	"time"
 )
 
@@ -22,7 +22,7 @@ func main() {
 			Birthdate != null
 	`
 
-	batch.Run("Contact", query, setTitle)
+	batchforce.Run("Contact", query, setTitle)
 }
 
 func setTitle(record force.ForceRecord) (updates []force.ForceRecord) {
