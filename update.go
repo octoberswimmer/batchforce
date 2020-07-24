@@ -19,6 +19,10 @@ type BulkJob struct {
 
 type Batch []force.ForceRecord
 
+type BatchSession struct {
+	Force *force.Force
+}
+
 func (batch Batch) marshallForBulkJob(job BulkJob) (updates []byte, err error) {
 	switch strings.ToUpper(job.ContentType) {
 	case "JSON":
@@ -138,5 +142,16 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 		fmt.Println("Query failed: " + err.Error())
 		os.Exit(1)
 	}
+	return <-numberFailures
+}
+
+func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord, jobOptions ...func(*BulkJob)) int {
+	setObject := func(job *BulkJob) {
+		job.Object = sobject
+	}
+	jobOptions = append([]func(*BulkJob){setObject}, jobOptions...)
+
+	numberFailures := make(chan int)
+	go update(session.Force, input, numberFailures, jobOptions...)
 	return <-numberFailures
 }
