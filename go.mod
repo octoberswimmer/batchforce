@@ -21,5 +21,3 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	k8s.io/kubernetes v1.25.4 // indirect
 )
-
-replace github.com/ForceCLI/force => /home/cwarden/git/force

@@ -1,6 +1,8 @@
 github.com/DATA-DOG/go-sqlmock v1.3.3/go.mod h1:f/Ixk793poVmq4qj/V1dPUg2JEAKC73Q5eFN3EC/SaM=
 github.com/ForceCLI/config v0.0.0-20180509213558-77c46df182dc h1:6QnikhQeCA+ww9Z8HwSHoAMylgFgJSr1gWv6EzWB9AY=
 github.com/ForceCLI/config v0.0.0-20180509213558-77c46df182dc/go.mod h1:lkRkS3oqMQcNRtLrkz4Reh53BBWxBBho0++c99jMFSQ=
+github.com/ForceCLI/force v0.99.4 h1:XksLXaXNFM6XC4qE/ZzOVZ6ieRoUHEhQR2Yzh1ZQMg0=
+github.com/ForceCLI/force v0.99.4/go.mod h1:EhdV2NEkK2qLoB/JXyTLAjcSwdJ7HVM1JUkknY/AeXY=
 github.com/ForceCLI/inflect v0.0.0-20130829110746-cc00b5ad7a6a h1:mMd54YgLoeupNpbph3KdwvF58O0lZ72RQaJ2cFPOFDE=
 github.com/ForceCLI/inflect v0.0.0-20130829110746-cc00b5ad7a6a/go.mod h1:DGKmCfb9oo5BivGO+szHk2ZvlqPDTlW4AYVpRBIVbms=
 github.com/ViViDboarder/gotifier v0.0.0-20140619195515-0f19f3d7c54c h1:qLWjxZGLdzxp0Gc4Sf6f4w15D+wNKZ28HhkV9y5cAhw=
