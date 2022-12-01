@@ -11,7 +11,7 @@ in using `force login` or set your active user using `force active -a
 CLI Example
 ===========
 
-Each record is made available to [expr](https://github.com/antonmedv/expr) as
+Each record is made available to [expr](https://github.com/antonmedv/expr/blob/master/docs/Language-Definition.md) as
 `record`.  The expr expression should evaluate to a single map or an array of
 maps.
 
