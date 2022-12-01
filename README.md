@@ -1,15 +1,29 @@
 batchforce
 ==========
 
-A go library to make bulk updates in Salesforce using a SOQL query and the Bulk
+A go library and CLI to make bulk updates in Salesforce using a SOQL query and the Bulk
 API.
 
 The active [force CLI](https://github.com/ForceCLI/force) login is used, so log
 in using `force login` or set your active user using `force active -a
 <username>` before running your application.
 
-Example
-=======
+CLI Example
+===========
+
+Each record is made available to [expr](https://github.com/antonmedv/expr) as
+`record`.  The expr expression should evaluate to a single map or an array of
+maps.
+
+
+```
+$ batchforce update Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%Test'" '{Id: record.Id, Name: record.Name + " Test"}'
+```
+
+This will query all Accounts whose Name doesn't end with "Test" and append "Test" to the Name.
+
+Library Example
+===============
 
 ```go
 package main

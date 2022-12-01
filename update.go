@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
 	force "github.com/ForceCLI/force/lib"
+	"github.com/antonmedv/expr"
 	"github.com/clbanning/mxj"
+	"github.com/mitchellh/mapstructure"
 
 	"os"
 	"strings"
@@ -47,7 +50,7 @@ func (batch Batch) marshallForBulkJob(job BulkJob) (updates []byte, err error) {
 	return
 }
 
-func update(session *force.Force, records <-chan force.ForceRecord, failures chan<- int, jobOptions ...func(*BulkJob)) {
+func update(session *force.Force, records <-chan force.ForceRecord, result chan<- force.JobInfo, jobOptions ...func(*BulkJob)) {
 	job := BulkJob{
 		BatchSize: 2000,
 	}
@@ -108,20 +111,71 @@ func update(session *force.Force, records <-chan force.ForceRecord, failures cha
 		}
 		time.Sleep(2000 * time.Millisecond)
 	}
-	failures <- status.NumberRecordsFailed
+	result <- status
 }
 
-func processRecords(input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter func(force.ForceRecord) []force.ForceRecord) {
-	for record := range input {
+func processRecords(channels ProcessorChannels, converter func(force.ForceRecord) []force.ForceRecord) {
+	defer func() {
+		close(channels.output)
+		if err := recover(); err != nil {
+			select {
+			// Make sure sender isn't blocked waiting for us to read
+			case <-channels.input:
+			default:
+			}
+			fmt.Println("panic occurred:", err)
+			fmt.Println("Sending abort signal")
+			channels.abort <- true
+		}
+	}()
+	for record := range channels.input {
 		updates := converter(record)
 		for _, update := range updates {
-			output <- update
+			channels.output <- update
 		}
 	}
-	close(output)
 }
 
-func Run(sobject string, query string, converter func(force.ForceRecord) []force.ForceRecord, jobOptions ...func(*BulkJob)) int {
+func RunExpr(sobject string, query string, expression string, jobOptions ...func(*BulkJob)) force.JobInfo {
+	env := map[string]interface{}{
+		"record": force.ForceRecord{},
+	}
+	program, err := expr.Compile(expression, expr.Env(env))
+	if err != nil {
+		fmt.Println("Invalid expression:", err)
+		os.Exit(1)
+	}
+	converter := func(record force.ForceRecord) []force.ForceRecord {
+		env := map[string]interface{}{
+			"record": record,
+		}
+		out, err := expr.Run(program, env)
+		if err != nil {
+			panic(err)
+		}
+		var singleRecord force.ForceRecord
+		err = mapstructure.Decode(out, &singleRecord)
+		if err == nil {
+			return []force.ForceRecord{singleRecord}
+		}
+		var multipleRecords []force.ForceRecord
+		err = mapstructure.Decode(out, &multipleRecords)
+		if err == nil {
+			return multipleRecords
+		}
+		fmt.Println("Unexpected value.  It should be a map or array or maps.  Got", out)
+		return []force.ForceRecord{}
+	}
+	return Run(sobject, query, converter, jobOptions...)
+}
+
+type ProcessorChannels struct {
+	input  <-chan force.ForceRecord
+	output chan<- force.ForceRecord
+	abort  chan<- bool
+}
+
+func Run(sobject string, query string, converter func(force.ForceRecord) []force.ForceRecord, jobOptions ...func(*BulkJob)) force.JobInfo {
 	session, err := force.ActiveForce()
 	if err != nil {
 		os.Exit(1)
@@ -134,24 +188,32 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
-	numberFailures := make(chan int)
-	go processRecords(queried, updates, converter)
-	go update(session, updates, numberFailures, jobOptions...)
-	err = session.QueryAndSend(query, queried)
+	abortChannel := make(chan bool)
+	jobResult := make(chan force.JobInfo)
+	go processRecords(ProcessorChannels{input: queried, output: updates, abort: abortChannel}, converter)
+	go update(session, updates, jobResult, jobOptions...)
+	err = session.AbortableQueryAndSend(query, queried, abortChannel)
 	if err != nil {
 		fmt.Println("Query failed: " + err.Error())
 		os.Exit(1)
 	}
-	return <-numberFailures
+	select {
+	case r := <-jobResult:
+		return r
+	case <-abortChannel:
+		fmt.Println("Aborted")
+		os.Exit(1)
+		return force.JobInfo{}
+	}
 }
 
-func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord, jobOptions ...func(*BulkJob)) int {
+func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord, jobOptions ...func(*BulkJob)) force.JobInfo {
 	setObject := func(job *BulkJob) {
 		job.Object = sobject
 	}
 	jobOptions = append([]func(*BulkJob){setObject}, jobOptions...)
 
-	numberFailures := make(chan int)
-	go update(session.Force, input, numberFailures, jobOptions...)
-	return <-numberFailures
+	jobResult := make(chan force.JobInfo)
+	go update(session.Force, input, jobResult, jobOptions...)
+	return <-jobResult
 }
