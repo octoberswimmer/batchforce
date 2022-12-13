@@ -18,9 +18,12 @@ import (
 type BulkJob struct {
 	force.JobInfo
 	BatchSize int
+	dryRun    bool
 }
 
 type Batch []force.ForceRecord
+
+type JobOption func(*BulkJob)
 
 type BatchSession struct {
 	Force *force.Force
@@ -50,7 +53,7 @@ func (batch Batch) marshallForBulkJob(job BulkJob) (updates []byte, err error) {
 	return
 }
 
-func update(session *force.Force, records <-chan force.ForceRecord, result chan<- force.JobInfo, jobOptions ...func(*BulkJob)) {
+func update(session *force.Force, records <-chan force.ForceRecord, result chan<- force.JobInfo, jobOptions ...JobOption) {
 	job := BulkJob{
 		BatchSize: 2000,
 	}
@@ -85,6 +88,15 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 	}
 
 	for record := range records {
+		if job.dryRun {
+			j, err := json.Marshal(record)
+			if err != nil {
+				fmt.Printf("Invalid update: %s", err.Error())
+			} else {
+				fmt.Println(string(j))
+			}
+			continue
+		}
 		batch = append(batch, record)
 		if len(batch) == job.BatchSize {
 			sendBatch()
@@ -136,7 +148,7 @@ func processRecords(channels ProcessorChannels, converter func(force.ForceRecord
 	}
 }
 
-func RunExpr(sobject string, query string, expression string, jobOptions ...func(*BulkJob)) force.JobInfo {
+func RunExpr(sobject string, query string, expression string, jobOptions ...JobOption) force.JobInfo {
 	env := map[string]interface{}{
 		"record": force.ForceRecord{},
 	}
@@ -175,7 +187,7 @@ type ProcessorChannels struct {
 	abort  chan<- bool
 }
 
-func Run(sobject string, query string, converter func(force.ForceRecord) []force.ForceRecord, jobOptions ...func(*BulkJob)) force.JobInfo {
+func Run(sobject string, query string, converter func(force.ForceRecord) []force.ForceRecord, jobOptions ...JobOption) force.JobInfo {
 	session, err := force.ActiveForce()
 	if err != nil {
 		os.Exit(1)
@@ -184,7 +196,7 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 	setObject := func(job *BulkJob) {
 		job.Object = sobject
 	}
-	jobOptions = append([]func(*BulkJob){setObject}, jobOptions...)
+	jobOptions = append([]JobOption{setObject}, jobOptions...)
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
@@ -207,13 +219,17 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 	}
 }
 
-func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord, jobOptions ...func(*BulkJob)) force.JobInfo {
+func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord, jobOptions ...JobOption) force.JobInfo {
 	setObject := func(job *BulkJob) {
 		job.Object = sobject
 	}
-	jobOptions = append([]func(*BulkJob){setObject}, jobOptions...)
+	jobOptions = append([]JobOption{setObject}, jobOptions...)
 
 	jobResult := make(chan force.JobInfo)
 	go update(session.Force, input, jobResult, jobOptions...)
 	return <-jobResult
+}
+
+func DryRun(j *BulkJob) {
+	j.dryRun = true
 }
