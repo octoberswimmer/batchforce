@@ -9,6 +9,7 @@ import (
 )
 
 func init() {
+	updateCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
 	RootCmd.AddCommand(updateCmd)
 }
 
@@ -28,7 +29,12 @@ $ batchforce update Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%
 		object := args[0]
 		query := args[1]
 		expr := args[2]
-		errors := RunExpr(object, query, expr)
+
+		var jobOptions []JobOption
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			jobOptions = append(jobOptions, DryRun)
+		}
+		errors := RunExpr(object, query, expr, jobOptions...)
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
