@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-
-	force "github.com/ForceCLI/force/lib"
-	"github.com/antonmedv/expr"
-	"github.com/clbanning/mxj"
-	"github.com/mitchellh/mapstructure"
-
 	"os"
 	"strings"
 	"time"
+
+	anon "github.com/octoberswimmer/batchforce/apex"
+
+	force "github.com/ForceCLI/force/lib"
+	"github.com/antonmedv/expr"
+	"github.com/benhoyt/goawk/interp"
+	"github.com/clbanning/mxj"
+	"github.com/mitchellh/mapstructure"
 )
 
 type BulkJob struct {
@@ -149,8 +151,22 @@ func processRecords(channels ProcessorChannels, converter func(force.ForceRecord
 }
 
 func RunExpr(sobject string, query string, expression string, jobOptions ...JobOption) force.JobInfo {
+	return RunExprWithApex(sobject, query, expression, "", jobOptions...)
+}
+
+func RunExprWithApex(sobject string, query string, expression string, apex string, jobOptions ...JobOption) force.JobInfo {
+	var context any
+	var err error
+	if apex != "" {
+		context, err = getApexContext(apex)
+		if err != nil {
+			fmt.Println("Unable to get apex context:", err)
+			os.Exit(1)
+		}
+	}
 	env := map[string]interface{}{
 		"record": force.ForceRecord{},
+		"apex":   context,
 	}
 	program, err := expr.Compile(expression, expr.Env(env))
 	if err != nil {
@@ -160,6 +176,7 @@ func RunExpr(sobject string, query string, expression string, jobOptions ...JobO
 	converter := func(record force.ForceRecord) []force.ForceRecord {
 		env := map[string]interface{}{
 			"record": record,
+			"apex":   context,
 		}
 		out, err := expr.Run(program, env)
 		if err != nil {
@@ -217,6 +234,47 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 		os.Exit(1)
 		return force.JobInfo{}
 	}
+}
+
+func getApexContext(apex string) (map[string]any, error) {
+	apexVars, err := anon.Vars(apex)
+	if err != nil {
+		return nil, err
+	}
+	lines := []string{"\n" + `Map<String, Object> b_f_c_t_x = new Map<String, Object>();`}
+	for _, v := range apexVars {
+		lines = append(lines, fmt.Sprintf(`b_f_c_t_x.put('%s', %s);`, v, v))
+	}
+	lines = append(lines, `System.debug(JSON.serialize(b_f_c_t_x));`)
+	apex = apex + strings.Join(lines, "\n")
+	session, err := force.ActiveForce()
+	if err != nil {
+		return nil, err
+	}
+	debugLog, err := session.Partner.ExecuteAnonymous(apex)
+	if err != nil {
+		return nil, err
+	}
+	val, err := varFromDebugLog(debugLog)
+	if err != nil {
+		return nil, err
+	}
+	var n map[string]any
+	err = json.Unmarshal(val, &n)
+	if err != nil {
+		return nil, err
+	}
+	return n, nil
+}
+
+func varFromDebugLog(log string) ([]byte, error) {
+	input := strings.NewReader(log)
+	output := new(bytes.Buffer)
+	err := interp.Exec(`$2~/USER_DEBUG/ { var = $5 } END { print var }`, "|", input, output)
+	if err != nil {
+		return nil, err
+	}
+	return output.Bytes(), nil
 }
 
 func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord, jobOptions ...JobOption) force.JobInfo {
