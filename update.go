@@ -291,3 +291,13 @@ func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord
 func DryRun(j *BulkJob) {
 	j.dryRun = true
 }
+
+func Serialize(j *BulkJob) {
+	j.ConcurrencyMode = "Serial"
+}
+
+func BatchSize(n int) func(*BulkJob) {
+	return func(j *BulkJob) {
+		j.BatchSize = n
+	}
+}
