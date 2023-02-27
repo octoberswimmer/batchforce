@@ -10,7 +10,10 @@ import (
 
 func init() {
 	updateCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
+	updateCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
+	updateCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
 	updateCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
+
 	RootCmd.AddCommand(updateCmd)
 }
 
@@ -53,6 +56,14 @@ $ batchforce update Account "SELECT Id, Type__c FROM Account WHERE RecordType.De
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
 			jobOptions = append(jobOptions, DryRun)
 		}
+
+		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
+			jobOptions = append(jobOptions, Serialize)
+		}
+		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
+			jobOptions = append(jobOptions, BatchSize(batchSize))
+		}
+
 		apex, _ := cmd.Flags().GetString("context")
 		errors := RunExprWithApex(object, query, expr, apex, jobOptions...)
 		if errors.NumberBatchesFailed > 0 {
