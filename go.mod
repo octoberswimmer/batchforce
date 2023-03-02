@@ -8,7 +8,8 @@ require (
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/octoberswimmer/go-tree-sitter-sfapex v0.0.0-20230223121415-39a3ac1557ab
+	github.com/octoberswimmer/go-tree-sitter-sfapex v0.0.0-20230302122840-7cad9169f7fd
+	github.com/sirupsen/logrus v1.8.1
 	github.com/smacker/go-tree-sitter v0.0.0-20230223055714-4d4cba2a4780
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.0

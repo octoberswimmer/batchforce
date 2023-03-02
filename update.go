@@ -9,12 +9,14 @@ import (
 	"time"
 
 	anon "github.com/octoberswimmer/batchforce/apex"
+	"github.com/octoberswimmer/batchforce/soql"
 
 	force "github.com/ForceCLI/force/lib"
 	"github.com/antonmedv/expr"
 	"github.com/benhoyt/goawk/interp"
 	"github.com/clbanning/mxj"
 	"github.com/mitchellh/mapstructure"
+	log "github.com/sirupsen/logrus"
 )
 
 type BulkJob struct {
@@ -68,23 +70,20 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 
 	jobInfo, err := session.CreateBulkJob(job.JobInfo)
 	if err != nil {
-		fmt.Println("Failed to create bulk job: " + err.Error())
-		os.Exit(1)
+		log.Fatalln("Failed to create bulk job: " + err.Error())
 	}
-	fmt.Printf("Created job %s\n", jobInfo.Id)
+	log.Infof("Created job %s\n", jobInfo.Id)
 	batch := make(Batch, 0, job.BatchSize)
 
 	sendBatch := func() {
 		updates, err := batch.marshallForBulkJob(job)
 		if err != nil {
-			fmt.Println("Failed to serialize batch: " + err.Error())
-			os.Exit(1)
+			log.Fatalln("Failed to serialize batch: " + err.Error())
 		}
-		fmt.Printf("Adding batch of %d records to job %s\n", len(batch), jobInfo.Id)
+		log.Infof("Adding batch of %d records to job %s\n", len(batch), jobInfo.Id)
 		_, err = session.AddBatchToJob(string(updates), jobInfo)
 		if err != nil {
-			fmt.Println("Failed to enqueue batch: " + err.Error())
-			os.Exit(1)
+			log.Fatalln("Failed to enqueue batch: " + err.Error())
 		}
 		batch = make(Batch, 0, job.BatchSize)
 	}
@@ -93,7 +92,7 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 		if job.dryRun {
 			j, err := json.Marshal(record)
 			if err != nil {
-				fmt.Printf("Invalid update: %s", err.Error())
+				log.Warnf("Invalid update: %s", err.Error())
 			} else {
 				fmt.Println(string(j))
 			}
@@ -109,17 +108,15 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 	}
 	jobInfo, err = session.CloseBulkJob(jobInfo.Id)
 	if err != nil {
-		fmt.Println("Failed to close bulk job: " + err.Error())
-		os.Exit(1)
+		log.Fatalln("Failed to close bulk job: " + err.Error())
 	}
 	var status force.JobInfo
 	for {
 		status, err = session.GetJobInfo(jobInfo.Id)
 		if err != nil {
-			fmt.Println("Failed to get bulk job status: " + err.Error())
-			os.Exit(1)
+			log.Fatalln("Failed to get bulk job status: " + err.Error())
 		}
-		force.DisplayJobInfo(status, os.Stdout)
+		force.DisplayJobInfo(status, os.Stderr)
 		if status.NumberBatchesCompleted+status.NumberBatchesFailed == status.NumberBatchesTotal {
 			break
 		}
@@ -128,7 +125,7 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 	result <- status
 }
 
-func processRecords(channels ProcessorChannels, converter func(force.ForceRecord) []force.ForceRecord) {
+func processRecords(query string, channels ProcessorChannels, converter func(force.ForceRecord) []force.ForceRecord) {
 	defer func() {
 		close(channels.output)
 		if err := recover(); err != nil {
@@ -137,17 +134,45 @@ func processRecords(channels ProcessorChannels, converter func(force.ForceRecord
 			case <-channels.input:
 			default:
 			}
-			fmt.Println("panic occurred:", err)
-			fmt.Println("Sending abort signal")
+			log.Errorln("panic occurred:", err)
+			log.Errorln("Sending abort signal")
 			channels.abort <- true
 		}
 	}()
+
+	subQueryRelationships, err := soql.SubQueryRelationships(query)
+	if err != nil {
+		panic("Failed to parse query for subqueries: " + err.Error())
+	}
+
 	for record := range channels.input {
-		updates := converter(record)
+		updates := converter(flattenRecord(record, subQueryRelationships))
 		for _, update := range updates {
 			channels.output <- update
 		}
 	}
+}
+
+// Replace subquery results with the records for the sub-query
+func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) force.ForceRecord {
+	if len(subQueryRelationships) == 0 {
+		return r
+	}
+	for k, v := range r {
+		if v == nil {
+			continue
+		}
+		if _, found := subQueryRelationships[strings.ToLower(k)]; found {
+			subQuery := v.(map[string]interface{})
+			records := subQuery["records"].([]interface{})
+			done := subQuery["done"].(bool)
+			if !done {
+				log.Fatalln("got possible incomplete reesults for " + k + " subquery. done is false, but all results should have been retrieved")
+			}
+			r[k] = records
+		}
+	}
+	return r
 }
 
 func RunExpr(sobject string, query string, expression string, jobOptions ...JobOption) force.JobInfo {
@@ -160,8 +185,7 @@ func RunExprWithApex(sobject string, query string, expression string, apex strin
 	if apex != "" {
 		context, err = getApexContext(apex)
 		if err != nil {
-			fmt.Println("Unable to get apex context:", err)
-			os.Exit(1)
+			log.Fatalln("Unable to get apex context:", err)
 		}
 	}
 	env := map[string]interface{}{
@@ -170,8 +194,7 @@ func RunExprWithApex(sobject string, query string, expression string, apex strin
 	}
 	program, err := expr.Compile(expression, expr.Env(env))
 	if err != nil {
-		fmt.Println("Invalid expression:", err)
-		os.Exit(1)
+		log.Fatalln("Invalid expression:", err)
 	}
 	converter := func(record force.ForceRecord) []force.ForceRecord {
 		env := map[string]interface{}{
@@ -192,7 +215,7 @@ func RunExprWithApex(sobject string, query string, expression string, apex strin
 		if err == nil {
 			return multipleRecords
 		}
-		fmt.Println("Unexpected value.  It should be a map or array or maps.  Got", out)
+		log.Warnln("Unexpected value.  It should be a map or array or maps.  Got", out)
 		return []force.ForceRecord{}
 	}
 	return Run(sobject, query, converter, jobOptions...)
@@ -205,9 +228,13 @@ type ProcessorChannels struct {
 }
 
 func Run(sobject string, query string, converter func(force.ForceRecord) []force.ForceRecord, jobOptions ...JobOption) force.JobInfo {
+	if err := soql.Validate([]byte(query)); err != nil {
+		log.Fatalf("query error: %s", err.Error())
+	}
+
 	session, err := force.ActiveForce()
 	if err != nil {
-		os.Exit(1)
+		log.Fatalf("Failed to get active force session: %s", err.Error())
 	}
 
 	setObject := func(job *BulkJob) {
@@ -219,19 +246,17 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 	updates := make(chan force.ForceRecord)
 	abortChannel := make(chan bool)
 	jobResult := make(chan force.JobInfo)
-	go processRecords(ProcessorChannels{input: queried, output: updates, abort: abortChannel}, converter)
+	go processRecords(query, ProcessorChannels{input: queried, output: updates, abort: abortChannel}, converter)
 	go update(session, updates, jobResult, jobOptions...)
 	err = session.AbortableQueryAndSend(query, queried, abortChannel)
 	if err != nil {
-		fmt.Println("Query failed: " + err.Error())
-		os.Exit(1)
+		log.Fatalln("Query failed: " + err.Error())
 	}
 	select {
 	case r := <-jobResult:
 		return r
 	case <-abortChannel:
-		fmt.Println("Aborted")
-		os.Exit(1)
+		log.Fatalln("Aborted")
 		return force.JobInfo{}
 	}
 }
