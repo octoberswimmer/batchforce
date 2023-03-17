@@ -205,6 +205,9 @@ func RunExprWithApex(sobject string, query string, expression string, apex strin
 		if err != nil {
 			panic(err)
 		}
+		if out == nil {
+			return []force.ForceRecord{}
+		}
 		var singleRecord force.ForceRecord
 		err = mapstructure.Decode(out, &singleRecord)
 		if err == nil {
