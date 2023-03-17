@@ -9,6 +9,8 @@ github.com/ViViDboarder/gotifier v0.0.0-20140619195515-0f19f3d7c54c h1:qLWjxZGLd
 github.com/ViViDboarder/gotifier v0.0.0-20140619195515-0f19f3d7c54c/go.mod h1:/nH+y85gO3ta3b6JtRWGA5hPIH35XJr/ZHXlfrBRx3A=
 github.com/antonmedv/expr v1.9.0 h1:j4HI3NHEdgDnN9p6oI6Ndr0G5QryMY0FNxT4ONrFDGU=
 github.com/antonmedv/expr v1.9.0/go.mod h1:5qsM3oLGDND7sDmQGDXHkYfkjYMUX14qsgqmHhwGEk8=
+github.com/antonmedv/expr v1.12.3 h1:bQwNFbmpIXKY/v4ZKuA4nPGuvuBVd9/zKiGS5ZsPePI=
+github.com/antonmedv/expr v1.12.3/go.mod h1:FPC8iWArxls7axbVLsW+kpg1mz29A1b2M6jt+hZfDkU=
 github.com/benhoyt/goawk v1.21.0 h1:GASuhJXHMFZ/2TJBPh+2Ah3kclVGNvGjt+uh3ajMdLk=
 github.com/benhoyt/goawk v1.21.0/go.mod h1:UG1Ld6CjkkHhoyQmErQGSTwmavsTqFnCDYsLSJbovqU=
 github.com/clbanning/mxj v1.8.4 h1:HuhwZtbyvyOw+3Z1AowPkU87JkJUSv751ELWaiTpj8I=

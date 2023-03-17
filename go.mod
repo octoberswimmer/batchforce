@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/ForceCLI/force v0.99.4
-	github.com/antonmedv/expr v1.9.0
+	github.com/antonmedv/expr v1.12.3
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
 	github.com/mitchellh/mapstructure v1.5.0
