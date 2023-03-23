@@ -22,6 +22,50 @@ $ batchforce update Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%
 
 This will query all Accounts whose Name doesn't end with "Test" and append "Test" to the Name.
 
+CLI Help
+========
+
+```
+$ batchforce help
+
+        Insert/Update Salesforce records using the Bulk API and a SOQL query.
+
+        Optionally use anonymous apex to provide additional context.
+
+        The SOQL query is used to generate the input.  Each record returned by the
+        query is made available to the Expr expression as a map named "record".  See
+        https://expr.medv.io/ for details on the Expr language.  The expression
+        evaluate to an map of the form, "{ Field: Value, ... }".
+
+        In addition to Expr's built-in operators and functions, the following
+        functions can be used within the expression:
+        - stripHtml: removes HTML tags
+        - escapeHtml: escapes characters using HTML entities like Apex's
+          String.escapeHtml4 method
+        - base64: base-64 encodes input
+
+
+        Additional context to be provided to the Expr expression by passing the
+        --context parameter containining anonymous apex to execute before the
+        records are queried.  Each apex variable defined will be available within
+        the "apex" map.
+
+Usage:
+  batchforce
+  batchforce [command]
+
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  help        Help about any command
+  insert      insert Salesforce records using the Bulk API
+  update      Update Salesforce records using the Bulk API
+
+Flags:
+  -h, --help   help for batchforce
+
+Use "batchforce [command] --help" for more information about a command.
+```
+
 Library Example
 ===============
 
