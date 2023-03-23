@@ -8,6 +8,13 @@ The active [force CLI](https://github.com/ForceCLI/force) login is used, so log
 in using `force login` or set your active user using `force active -a
 <username>` before running your application.
 
+Installation
+============
+
+```
+$ go install github.com/octoberswimmer/batchforce/cmd/batchforce
+```
+
 CLI Example
 ===========
 
