@@ -192,7 +192,7 @@ func RunExprWithApex(sobject string, query string, expression string, apex strin
 		"record": force.ForceRecord{},
 		"apex":   context,
 	}
-	program, err := expr.Compile(expression, expr.Env(env), base64, stripHtml)
+	program, err := expr.Compile(expression, append(exprFunctions, expr.Env(env))...)
 	if err != nil {
 		log.Fatalln("Invalid expression:", err)
 	}
