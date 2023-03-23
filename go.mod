@@ -7,6 +7,7 @@ require (
 	github.com/antonmedv/expr v1.12.3
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
+	github.com/grokify/html-strip-tags-go v0.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/octoberswimmer/go-tree-sitter-sfapex v0.0.0-20230302122840-7cad9169f7fd
 	github.com/sirupsen/logrus v1.8.1
@@ -21,7 +22,6 @@ require (
 	github.com/ViViDboarder/gotifier v0.0.0-20140619195515-0f19f3d7c54c // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
-	github.com/grokify/html-strip-tags-go v0.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
