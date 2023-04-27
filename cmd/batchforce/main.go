@@ -19,8 +19,14 @@ func init() {
 	insertCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
 	insertCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
 
+	deleteCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
+	deleteCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
+	deleteCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
+	deleteCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
+
 	RootCmd.AddCommand(updateCmd)
 	RootCmd.AddCommand(insertCmd)
+	RootCmd.AddCommand(deleteCmd)
 }
 
 func main() {
@@ -107,11 +113,56 @@ $ batchforce insert Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%
 	},
 }
 
+var deleteCmd = &cobra.Command{
+	Use:   "delete <SObject> <SOQL> [Expr]",
+	Short: "delete Salesforce records using the Bulk API",
+	Example: `
+$ batchforce delete Account "SELECT Id FROM Account WHERE Name LIKE '%test'"
+$ batchforce delete Account "SELECT Id, Name FROM Account" 'record.Name matches "\d{3,5}" ? {Id: record.Id} : nil'
+	`,
+	DisableFlagsInUseLine: true,
+	Args:                  cobra.RangeArgs(2, 3),
+	Run: func(cmd *cobra.Command, args []string) {
+		object := args[0]
+		query := args[1]
+		var expr string
+		if len(args) == 3 {
+			expr = args[2]
+		} else {
+			expr = "{Id: record.Id}"
+		}
+
+		jobOptions := []JobOption{Delete}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			jobOptions = append(jobOptions, DryRun)
+		}
+
+		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
+			jobOptions = append(jobOptions, Serialize)
+		}
+		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
+			jobOptions = append(jobOptions, BatchSize(batchSize))
+		}
+
+		apex, _ := cmd.Flags().GetString("context")
+		errors := RunExprWithApex(object, query, expr, apex, jobOptions...)
+		if errors.NumberBatchesFailed > 0 {
+			fmt.Println(errors.NumberBatchesFailed, "batch failures")
+			os.Exit(1)
+		}
+		if errors.NumberRecordsFailed > 0 {
+			fmt.Println(errors.NumberRecordsFailed, "record failures")
+			os.Exit(1)
+		}
+	},
+}
+
 var RootCmd = &cobra.Command{
 	Use:   "batchforce",
 	Short: "Use Bulk API to update Salesforce records",
 	Long: `
-	Insert/Update Salesforce records using the Bulk API and a SOQL query.
+	Insert/Update/Delete Salesforce records using the Bulk API and a SOQL query.
 
 	Optionally use anonymous apex to provide additional context.
 
