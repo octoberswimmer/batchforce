@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	force "github.com/ForceCLI/force/lib"
 	. "github.com/octoberswimmer/batchforce"
 	"github.com/spf13/cobra"
 )
+
+var session *force.Force
 
 func init() {
 	updateCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
@@ -27,6 +30,8 @@ func init() {
 	RootCmd.AddCommand(updateCmd)
 	RootCmd.AddCommand(insertCmd)
 	RootCmd.AddCommand(deleteCmd)
+
+	RootCmd.PersistentFlags().StringP("account", "a", "", "account `username` to use")
 }
 
 func main() {
@@ -49,20 +54,26 @@ $ batchforce update Account "SELECT Id, Type__c FROM Account WHERE RecordType.De
 		query := args[1]
 		expr := args[2]
 
-		var jobOptions []JobOption
+		execution := NewExecution(object, query)
+		execution.Expr = expr
+		execution.Session = session
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			jobOptions = append(jobOptions, DryRun)
+			execution.DryRun = true
 		}
 
+		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
+			execution.BatchSize = batchSize
+		}
+		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
+			execution.Apex = apex
+		}
+
+		var jobOptions []JobOption
 		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
 			jobOptions = append(jobOptions, Serialize)
 		}
-		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
-			jobOptions = append(jobOptions, BatchSize(batchSize))
-		}
-
-		apex, _ := cmd.Flags().GetString("context")
-		errors := RunExprWithApex(object, query, expr, apex, jobOptions...)
+		execution.JobOptions = jobOptions
+		errors := execution.Run()
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
@@ -87,21 +98,26 @@ $ batchforce insert Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%
 		query := args[1]
 		expr := args[2]
 
-		jobOptions := []JobOption{Insert}
-
+		execution := NewExecution(object, query)
+		execution.Expr = expr
+		execution.Session = session
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			jobOptions = append(jobOptions, DryRun)
+			execution.DryRun = true
 		}
 
+		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
+			execution.BatchSize = batchSize
+		}
+		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
+			execution.Apex = apex
+		}
+
+		jobOptions := []JobOption{Insert}
 		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
 			jobOptions = append(jobOptions, Serialize)
 		}
-		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
-			jobOptions = append(jobOptions, BatchSize(batchSize))
-		}
-
-		apex, _ := cmd.Flags().GetString("context")
-		errors := RunExprWithApex(object, query, expr, apex, jobOptions...)
+		execution.JobOptions = jobOptions
+		errors := execution.Run()
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
@@ -132,21 +148,27 @@ $ batchforce delete Account "SELECT Id, Name FROM Account" 'record.Name matches 
 			expr = "{Id: record.Id}"
 		}
 
-		jobOptions := []JobOption{Delete}
-
+		execution := NewExecution(object, query)
+		execution.Expr = expr
+		execution.Session = session
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			jobOptions = append(jobOptions, DryRun)
+			execution.DryRun = true
 		}
 
+		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
+			execution.BatchSize = batchSize
+		}
+		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
+			execution.Apex = apex
+		}
+
+		jobOptions := []JobOption{Delete}
 		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
 			jobOptions = append(jobOptions, Serialize)
 		}
-		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
-			jobOptions = append(jobOptions, BatchSize(batchSize))
-		}
 
-		apex, _ := cmd.Flags().GetString("context")
-		errors := RunExprWithApex(object, query, expr, apex, jobOptions...)
+		execution.JobOptions = jobOptions
+		errors := execution.Run()
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
@@ -188,12 +210,28 @@ var RootCmd = &cobra.Command{
 		cmd.Help()
 		os.Exit(1)
 	},
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		initializeSession(cmd)
+	},
 	DisableFlagsInUseLine: true,
 }
 
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {
 		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func initializeSession(cmd *cobra.Command) {
+	var err error
+	if account, _ := cmd.Flags().GetString("account"); account != "" {
+		session, err = force.GetForce(account)
+	} else {
+		session, err = force.ActiveForce()
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not initialize session: "+err.Error())
 		os.Exit(1)
 	}
 }

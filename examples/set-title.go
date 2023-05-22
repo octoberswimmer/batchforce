@@ -1,9 +1,10 @@
 package main
 
 import (
+	"time"
+
 	force "github.com/ForceCLI/force/lib"
 	batch "github.com/octoberswimmer/batchforce"
-	"time"
 )
 
 var (
