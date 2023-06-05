@@ -19,21 +19,50 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type BulkJob struct {
-	force.JobInfo
+type Execution struct {
+	Session    *force.Force
+	JobOptions []JobOption
+	Object     string
+	Query      string
+	Apex       string
+	Expr       string
+	Converter  Converter
+
+	DryRun    bool
 	BatchSize int
-	dryRun    bool
 }
 
 type Batch []force.ForceRecord
+type Converter func(force.ForceRecord) []force.ForceRecord
 
-type JobOption func(*BulkJob)
+type JobOption func(*force.JobInfo)
 
+/*
 type BatchSession struct {
 	Force *force.Force
 }
+*/
 
-func (batch Batch) marshallForBulkJob(job BulkJob) (updates []byte, err error) {
+func NewExecution(object string, query string) *Execution {
+	return &Execution{
+		Object:    object,
+		Query:     query,
+		BatchSize: 2000,
+	}
+}
+
+func (e *Execution) session() *force.Force {
+	if e.Session == nil {
+		session, err := force.ActiveForce()
+		if err != nil {
+			log.Fatalf("Failed to get active force session: %s", err.Error())
+		}
+		e.Session = session
+	}
+	return e.Session
+}
+
+func (batch Batch) marshallForBulkJob(job force.JobInfo) (updates []byte, err error) {
 	switch strings.ToUpper(job.ContentType) {
 	case "JSON":
 		updates, err = json.Marshal(batch)
@@ -57,23 +86,22 @@ func (batch Batch) marshallForBulkJob(job BulkJob) (updates []byte, err error) {
 	return
 }
 
-func update(session *force.Force, records <-chan force.ForceRecord, result chan<- force.JobInfo, jobOptions ...JobOption) {
-	job := BulkJob{
-		BatchSize: 2000,
-	}
+func (e *Execution) update(records <-chan force.ForceRecord, result chan<- force.JobInfo) {
+	job := force.JobInfo{}
 	job.Operation = "update"
 	job.ContentType = "JSON"
+	job.Object = e.Object
 
-	for _, option := range jobOptions {
+	for _, option := range e.JobOptions {
 		option(&job)
 	}
 
-	jobInfo, err := session.CreateBulkJob(job.JobInfo)
+	jobInfo, err := e.Session.CreateBulkJob(job)
 	if err != nil {
 		log.Fatalln("Failed to create bulk job: " + err.Error())
 	}
 	log.Infof("Created job %s\n", jobInfo.Id)
-	batch := make(Batch, 0, job.BatchSize)
+	batch := make(Batch, 0, e.BatchSize)
 
 	sendBatch := func() {
 		updates, err := batch.marshallForBulkJob(job)
@@ -81,15 +109,15 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 			log.Fatalln("Failed to serialize batch: " + err.Error())
 		}
 		log.Infof("Adding batch of %d records to job %s\n", len(batch), jobInfo.Id)
-		_, err = session.AddBatchToJob(string(updates), jobInfo)
+		_, err = e.Session.AddBatchToJob(string(updates), jobInfo)
 		if err != nil {
 			log.Fatalln("Failed to enqueue batch: " + err.Error())
 		}
-		batch = make(Batch, 0, job.BatchSize)
+		batch = make(Batch, 0, e.BatchSize)
 	}
 
 	for record := range records {
-		if job.dryRun {
+		if e.DryRun {
 			j, err := json.Marshal(record)
 			if err != nil {
 				log.Warnf("Invalid update: %s", err.Error())
@@ -99,20 +127,20 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 			continue
 		}
 		batch = append(batch, record)
-		if len(batch) == job.BatchSize {
+		if len(batch) == e.BatchSize {
 			sendBatch()
 		}
 	}
 	if len(batch) > 0 {
 		sendBatch()
 	}
-	jobInfo, err = session.CloseBulkJob(jobInfo.Id)
+	jobInfo, err = e.Session.CloseBulkJob(jobInfo.Id)
 	if err != nil {
 		log.Fatalln("Failed to close bulk job: " + err.Error())
 	}
 	var status force.JobInfo
 	for {
-		status, err = session.GetJobInfo(jobInfo.Id)
+		status, err = e.Session.GetJobInfo(jobInfo.Id)
 		if err != nil {
 			log.Fatalln("Failed to get bulk job status: " + err.Error())
 		}
@@ -125,7 +153,7 @@ func update(session *force.Force, records <-chan force.ForceRecord, result chan<
 	result <- status
 }
 
-func processRecords(query string, channels ProcessorChannels, converter func(force.ForceRecord) []force.ForceRecord) {
+func processRecords(query string, channels ProcessorChannels, converter Converter) {
 	defer func() {
 		close(channels.output)
 		if err := recover(); err != nil {
@@ -175,19 +203,7 @@ func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) f
 	return r
 }
 
-func RunExpr(sobject string, query string, expression string, jobOptions ...JobOption) force.JobInfo {
-	return RunExprWithApex(sobject, query, expression, "", jobOptions...)
-}
-
-func RunExprWithApex(sobject string, query string, expression string, apex string, jobOptions ...JobOption) force.JobInfo {
-	var context any
-	var err error
-	if apex != "" {
-		context, err = getApexContext(apex)
-		if err != nil {
-			log.Fatalln("Unable to get apex context:", err)
-		}
-	}
+func exprConverter(expression string, context any) func(force.ForceRecord) []force.ForceRecord {
 	env := map[string]interface{}{
 		"record": force.ForceRecord{},
 		"apex":   context,
@@ -221,37 +237,36 @@ func RunExprWithApex(sobject string, query string, expression string, apex strin
 		log.Warnln("Unexpected value.  It should be a map or array or maps.  Got", out)
 		return []force.ForceRecord{}
 	}
-	return Run(sobject, query, converter, jobOptions...)
+	return converter
 }
 
-type ProcessorChannels struct {
-	input  <-chan force.ForceRecord
-	output chan<- force.ForceRecord
-	abort  chan<- bool
-}
-
-func Run(sobject string, query string, converter func(force.ForceRecord) []force.ForceRecord, jobOptions ...JobOption) force.JobInfo {
-	if err := soql.Validate([]byte(query)); err != nil {
+func (e *Execution) Run() force.JobInfo {
+	var context any
+	var err error
+	if e.Apex != "" {
+		context, err = e.getApexContext()
+		if err != nil {
+			log.Fatalln("Unable to get apex context:", err)
+		}
+	}
+	if e.Expr != "" {
+		e.Converter = exprConverter(e.Expr, context)
+	} else if e.Converter == nil {
+		log.Fatalf("Expr or Converter must be defined")
+	}
+	if err := soql.Validate([]byte(e.Query)); err != nil {
 		log.Fatalf("query error: %s", err.Error())
 	}
 
-	session, err := force.ActiveForce()
-	if err != nil {
-		log.Fatalf("Failed to get active force session: %s", err.Error())
-	}
-
-	setObject := func(job *BulkJob) {
-		job.Object = sobject
-	}
-	jobOptions = append([]JobOption{setObject}, jobOptions...)
+	session := e.session()
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
 	abortChannel := make(chan bool)
 	jobResult := make(chan force.JobInfo)
-	go processRecords(query, ProcessorChannels{input: queried, output: updates, abort: abortChannel}, converter)
-	go update(session, updates, jobResult, jobOptions...)
-	err = session.AbortableQueryAndSend(query, queried, abortChannel)
+	go processRecords(e.Query, ProcessorChannels{input: queried, output: updates, abort: abortChannel}, e.Converter)
+	go e.update(updates, jobResult)
+	err = session.AbortableQueryAndSend(e.Query, queried, abortChannel)
 	if err != nil {
 		log.Fatalln("Query failed: " + err.Error())
 	}
@@ -264,7 +279,14 @@ func Run(sobject string, query string, converter func(force.ForceRecord) []force
 	}
 }
 
-func getApexContext(apex string) (map[string]any, error) {
+type ProcessorChannels struct {
+	input  <-chan force.ForceRecord
+	output chan<- force.ForceRecord
+	abort  chan<- bool
+}
+
+func (e *Execution) getApexContext() (map[string]any, error) {
+	apex := e.Apex
 	apexVars, err := anon.Vars(apex)
 	if err != nil {
 		return nil, err
@@ -275,10 +297,8 @@ func getApexContext(apex string) (map[string]any, error) {
 	}
 	lines = append(lines, `System.debug(JSON.serialize(b_f_c_t_x));`)
 	apex = apex + strings.Join(lines, "\n")
-	session, err := force.ActiveForce()
-	if err != nil {
-		return nil, err
-	}
+
+	session := e.session()
 	debugLog, err := session.Partner.ExecuteAnonymous(apex)
 	if err != nil {
 		return nil, err
@@ -305,27 +325,6 @@ func varFromDebugLog(log string) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func (session *BatchSession) Load(sobject string, input <-chan force.ForceRecord, jobOptions ...JobOption) force.JobInfo {
-	setObject := func(job *BulkJob) {
-		job.Object = sobject
-	}
-	jobOptions = append([]JobOption{setObject}, jobOptions...)
-
-	jobResult := make(chan force.JobInfo)
-	go update(session.Force, input, jobResult, jobOptions...)
-	return <-jobResult
-}
-
-func DryRun(j *BulkJob) {
-	j.dryRun = true
-}
-
-func Serialize(j *BulkJob) {
+func Serialize(j *force.JobInfo) {
 	j.ConcurrencyMode = "Serial"
-}
-
-func BatchSize(n int) func(*BulkJob) {
-	return func(j *BulkJob) {
-		j.BatchSize = n
-	}
 }

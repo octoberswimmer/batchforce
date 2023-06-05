@@ -1,5 +1,7 @@
 package batch
 
-func Insert(j *BulkJob) {
+import force "github.com/ForceCLI/force/lib"
+
+func Insert(j *force.JobInfo) {
 	j.Operation = "insert"
 }

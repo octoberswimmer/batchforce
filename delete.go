@@ -1,5 +1,7 @@
 package batch
 
-func Delete(j *BulkJob) {
+import force "github.com/ForceCLI/force/lib"
+
+func Delete(j *force.JobInfo) {
 	j.Operation = "delete"
 }
