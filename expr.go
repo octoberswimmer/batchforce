@@ -9,9 +9,8 @@ import (
 	strip "github.com/grokify/html-strip-tags-go"
 )
 
-var exprFunctions []expr.Option
-
-func init() {
+func exprFunctions() []expr.Option {
+	var exprFunctions []expr.Option
 	exprFunctions = append(exprFunctions, expr.Function(
 		"base64",
 		func(params ...any) (any, error) {
@@ -36,4 +35,27 @@ func init() {
 		new(func(string) string),
 	))
 
+	store := make(map[string]any)
+	// compareAndSet takes a key and value
+	// returns true if the key exists in the store and the stored value matches the passed value
+	// returns true if the key does not exist in the store, and stores the value under the key
+	// returns false if the key exists in the store and the stored value does not match the passed value
+	exprFunctions = append(exprFunctions, expr.Function(
+		"compareAndSet",
+		func(params ...any) (any, error) {
+			key := params[0].(string)
+			value := params[1]
+			if store[key] == value {
+				return true, nil
+			} else if _, ok := store[key]; !ok {
+				store[key] = value
+				return true, nil
+			} else {
+				return false, nil
+			}
+		},
+		new(func(string, any) bool),
+	))
+
+	return exprFunctions
 }
