@@ -199,6 +199,8 @@ var RootCmd = &cobra.Command{
 	- escapeHtml: escapes characters using HTML entities like Apex's
 	  String.escapeHtml4 method
 	- base64: base-64 encodes input
+	- compareAndSet: check if key maps to value; if key doesn't exist, set it to
+	  value
 
 
 	Additional context to be provided to the Expr expression by passing the
