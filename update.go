@@ -208,7 +208,7 @@ func exprConverter(expression string, context any) func(force.ForceRecord) []for
 		"record": force.ForceRecord{},
 		"apex":   context,
 	}
-	program, err := expr.Compile(expression, append(exprFunctions, expr.Env(env))...)
+	program, err := expr.Compile(expression, append(exprFunctions(), expr.Env(env))...)
 	if err != nil {
 		log.Fatalln("Invalid expression:", err)
 	}
