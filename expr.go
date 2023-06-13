@@ -57,5 +57,22 @@ func exprFunctions() []expr.Option {
 		new(func(string, any) bool),
 	))
 
+	counters := make(map[string]int64)
+	// incr increments the number stored at key by one.  If the key does not
+	// exist, it is set to 0 first.
+	exprFunctions = append(exprFunctions, expr.Function(
+		"incr",
+		func(params ...any) (any, error) {
+			key := params[0].(string)
+			if v, ok := counters[key]; ok {
+				counters[key] = v + 1
+			} else {
+				counters[key] = 0
+			}
+			return counters[key], nil
+		},
+		new(func(string) int64),
+	))
+
 	return exprFunctions
 }

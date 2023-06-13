@@ -201,6 +201,7 @@ var RootCmd = &cobra.Command{
 	- base64: base-64 encodes input
 	- compareAndSet: check if key maps to value; if key doesn't exist, set it to
 	  value
+	- incr: increments the number stored at key by one. set to 0 if not set.
 
 
 	Additional context to be provided to the Expr expression by passing the
