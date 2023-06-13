@@ -35,7 +35,7 @@ CLI Help
 ```
 $ batchforce help
 
-        Insert/Update Salesforce records using the Bulk API and a SOQL query.
+        Insert/Update/Delete Salesforce records using the Bulk API and a SOQL query.
 
         Optionally use anonymous apex to provide additional context.
 
@@ -50,6 +50,9 @@ $ batchforce help
         - escapeHtml: escapes characters using HTML entities like Apex's
           String.escapeHtml4 method
         - base64: base-64 encodes input
+        - compareAndSet: check if key maps to value; if key doesn't exist, set it to
+          value
+        - incr: increments the number stored at key by one. set to 0 if not set.
 
 
         Additional context to be provided to the Expr expression by passing the
@@ -63,12 +66,14 @@ Usage:
 
 Available Commands:
   completion  Generate the autocompletion script for the specified shell
+  delete      delete Salesforce records using the Bulk API
   help        Help about any command
   insert      insert Salesforce records using the Bulk API
   update      Update Salesforce records using the Bulk API
 
 Flags:
-  -h, --help   help for batchforce
+  -a, --account username   account username to use
+  -h, --help               help for batchforce
 
 Use "batchforce [command] --help" for more information about a command.
 ```
