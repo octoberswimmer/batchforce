@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	anon "github.com/octoberswimmer/batchforce/apex"
 	"github.com/octoberswimmer/batchforce/soql"
+	csvmap "github.com/recursionpharma/go-csv-map"
 
 	force "github.com/ForceCLI/force/lib"
 	"github.com/antonmedv/expr"
@@ -24,6 +26,7 @@ type Execution struct {
 	JobOptions []JobOption
 	Object     string
 	Query      string
+	CsvFile    string
 	Apex       string
 	Expr       string
 	Converter  Converter
@@ -38,11 +41,31 @@ type Converter func(force.ForceRecord) []force.ForceRecord
 type JobOption func(*force.JobInfo)
 
 func NewExecution(object string, query string) *Execution {
+	exec, err := NewQueryExecution(object, query)
+	if err != nil {
+		log.Fatalf("query error: %s", err.Error())
+	}
+	return exec
+}
+
+func NewQueryExecution(object string, query string) (*Execution, error) {
+	if err := soql.Validate([]byte(query)); err != nil {
+		return nil, err
+	}
+
 	return &Execution{
 		Object:    object,
 		Query:     query,
 		BatchSize: 2000,
-	}
+	}, nil
+}
+
+func NewCSVExecution(object string, csv string) (*Execution, error) {
+	return &Execution{
+		Object:    object,
+		CsvFile:   csv,
+		BatchSize: 2000,
+	}, nil
 }
 
 func (e *Execution) session() *force.Force {
@@ -147,7 +170,30 @@ func (e *Execution) update(records <-chan force.ForceRecord, result chan<- force
 	result <- status
 }
 
-func processRecords(query string, channels ProcessorChannels, converter Converter) {
+func processRecords(channels ProcessorChannels, converter Converter) {
+	defer func() {
+		close(channels.output)
+		if err := recover(); err != nil {
+			select {
+			// Make sure sender isn't blocked waiting for us to read
+			case <-channels.input:
+			default:
+			}
+			log.Errorln("panic occurred:", err)
+			log.Errorln("Sending abort signal")
+			channels.abort <- true
+		}
+	}()
+
+	for record := range channels.input {
+		updates := converter(record)
+		for _, update := range updates {
+			channels.output <- update
+		}
+	}
+}
+
+func processRecordsWithSubQueries(query string, channels ProcessorChannels, converter Converter) {
 	defer func() {
 		close(channels.output)
 		if err := recover(); err != nil {
@@ -248,9 +294,6 @@ func (e *Execution) Run() force.JobInfo {
 	} else if e.Converter == nil {
 		log.Fatalf("Expr or Converter must be defined")
 	}
-	if err := soql.Validate([]byte(e.Query)); err != nil {
-		log.Fatalf("query error: %s", err.Error())
-	}
 
 	session := e.session()
 
@@ -258,11 +301,19 @@ func (e *Execution) Run() force.JobInfo {
 	updates := make(chan force.ForceRecord)
 	abortChannel := make(chan bool)
 	jobResult := make(chan force.JobInfo)
-	go processRecords(e.Query, ProcessorChannels{input: queried, output: updates, abort: abortChannel}, e.Converter)
 	go e.update(updates, jobResult)
-	err = session.AbortableQueryAndSend(e.Query, queried, abortChannel)
-	if err != nil {
-		log.Fatalln("Query failed: " + err.Error())
+	if e.Query != "" {
+		go processRecordsWithSubQueries(e.Query, ProcessorChannels{input: queried, output: updates, abort: abortChannel}, e.Converter)
+		err = session.AbortableQueryAndSend(e.Query, queried, abortChannel)
+		if err != nil {
+			log.Fatalln("Query failed: " + err.Error())
+		}
+	} else {
+		go processRecords(ProcessorChannels{input: queried, output: updates, abort: abortChannel}, e.Converter)
+		err = recordsFromCsv(e.CsvFile, queried, abortChannel)
+		if err != nil {
+			log.Fatalln("Failed to read file: " + err.Error())
+		}
 	}
 	select {
 	case r := <-jobResult:
@@ -271,6 +322,44 @@ func (e *Execution) Run() force.JobInfo {
 		log.Fatalln("Aborted")
 		return force.JobInfo{}
 	}
+}
+
+func recordsFromCsv(fileName string, processor chan<- force.ForceRecord, abort <-chan bool) error {
+	defer func() {
+		close(processor)
+	}()
+
+	f, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	r := csvmap.NewReader(f)
+	r.Columns, err = r.ReadHeader()
+	if err != nil {
+		return fmt.Errorf("failed to read csv header: %w", err)
+	}
+
+	for {
+		row, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read csv row: %w", err)
+		}
+		select {
+		case <-abort:
+			break
+		default:
+			r := force.ForceRecord{}
+			for k, v := range row {
+				r[k] = any(v)
+			}
+			processor <- r
+		}
+	}
+
+	return nil
 }
 
 type ProcessorChannels struct {

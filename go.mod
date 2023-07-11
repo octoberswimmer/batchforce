@@ -28,6 +28,7 @@ require (
 	github.com/onsi/gomega v1.23.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/recursionpharma/go-csv-map v0.0.0-20160524001940-792523c65ae9 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
