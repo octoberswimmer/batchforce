@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	force "github.com/ForceCLI/force/lib"
@@ -12,16 +13,32 @@ import (
 var session *force.Force
 
 func init() {
+	updateCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
+	updateCmd.Flags().StringP("file", "f", "", "CSV file for input data")
 	updateCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
 	updateCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
 	updateCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
 	updateCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
 
+	insertCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
+	insertCmd.Flags().StringP("file", "f", "", "CSV file for input data")
 	insertCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
 	insertCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
 	insertCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
 	insertCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
 
+	upsertCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
+	upsertCmd.Flags().StringP("file", "f", "", "CSV file for input data")
+	upsertCmd.Flags().StringP("external-id", "e", "", "external id")
+	upsertCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
+	upsertCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
+	upsertCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
+	upsertCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
+
+	upsertCmd.MarkFlagRequired("external-id")
+
+	deleteCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
+	deleteCmd.Flags().StringP("file", "f", "", "CSV file for input data")
 	deleteCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
 	deleteCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
 	deleteCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
@@ -29,6 +46,7 @@ func init() {
 
 	RootCmd.AddCommand(updateCmd)
 	RootCmd.AddCommand(insertCmd)
+	RootCmd.AddCommand(upsertCmd)
 	RootCmd.AddCommand(deleteCmd)
 
 	RootCmd.PersistentFlags().StringP("account", "a", "", "account `username` to use")
@@ -39,22 +57,38 @@ func main() {
 }
 
 var updateCmd = &cobra.Command{
-	Use:   "update <SObject> <SOQL> <Expr>",
+	Use:   "update [flags] <SObject> <Expr>",
 	Short: "Update Salesforce records using the Bulk API",
 	Example: `
-$ batchforce update Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%test'" '{Id: record.Id, Name: record.Name + " Test"}'
+$ batchforce update --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%test'" Account '{Id: record.Id, Name: record.Name + " Test"}'
 
-$ batchforce update Account "SELECT Id, Type__c FROM Account WHERE RecordType.DeveloperName = 'OldValue'" '{Id: record.Id, RecordTypeId: apex.recordTypes[record.Type__c]}' \
+$ batchforce update --query "SELECT Id, Type__c FROM Account WHERE RecordType.DeveloperName = 'OldValue'" Account '{Id: record.Id, RecordTypeId: apex.recordTypes[record.Type__c]}' \
   --context "Map<String, Id> recordTypes = new Map<String, Id>(); for (RecordType r : [SELECT DeveloperName, Id FROM RecordType WHERE SobjectType = 'Account']){ recordTypes.put(r.DeveloperName, r.Id); }"
 	`,
-	DisableFlagsInUseLine: true,
-	Args:                  cobra.ExactValidArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
+	DisableFlagsInUseLine: false,
+	Args:                  cobra.ExactValidArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		object := args[0]
-		query := args[1]
-		expr := args[2]
+		expr := args[1]
 
-		execution := NewExecution(object, query)
+		query, _ := cmd.Flags().GetString("query")
+		csv, _ := cmd.Flags().GetString("file")
+
+		if query == "" && csv == "" {
+			return fmt.Errorf("Either --query or --file must be set")
+		}
+
+		var execution *Execution
+		var err error
+		if csv != "" {
+			execution, err = NewCSVExecution(object, csv)
+		} else {
+			execution, err = NewQueryExecution(object, query)
+		}
+		if err != nil {
+			log.Fatalf("Could not initialize query: %s", err.Error())
+		}
+
 		execution.Expr = expr
 		execution.Session = session
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
@@ -82,23 +116,40 @@ $ batchforce update Account "SELECT Id, Type__c FROM Account WHERE RecordType.De
 			fmt.Println(errors.NumberRecordsFailed, "record failures")
 			os.Exit(1)
 		}
+		return nil
 	},
 }
 
 var insertCmd = &cobra.Command{
-	Use:   "insert <SObject> <SOQL> <Expr>",
+	Use:   "insert [flags] <SObject> <Expr>",
 	Short: "insert Salesforce records using the Bulk API",
 	Example: `
-$ batchforce insert Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%test'" '{Name: record.Name + " Copy"}'
+$ batchforce insert --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%test'" Account '{Name: record.Name + " Copy"}'
+$ batchforce insert --file accounts.csv Account '{Name: record.Name + " Copy"}'
 	`,
-	DisableFlagsInUseLine: true,
-	Args:                  cobra.ExactValidArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
+	DisableFlagsInUseLine: false,
+	Args:                  cobra.ExactValidArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		object := args[0]
-		query := args[1]
-		expr := args[2]
+		expr := args[1]
 
-		execution := NewExecution(object, query)
+		query, _ := cmd.Flags().GetString("query")
+		csv, _ := cmd.Flags().GetString("file")
+
+		if query == "" && csv == "" {
+			return fmt.Errorf("Either --query or --file must be set")
+		}
+
+		var execution *Execution
+		var err error
+		if csv != "" {
+			execution, err = NewCSVExecution(object, csv)
+		} else {
+			execution, err = NewQueryExecution(object, query)
+		}
+		if err != nil {
+			log.Fatalf("Could not initialize query: %s", err.Error())
+		}
 		execution.Expr = expr
 		execution.Session = session
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
@@ -126,29 +177,109 @@ $ batchforce insert Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%
 			fmt.Println(errors.NumberRecordsFailed, "record failures")
 			os.Exit(1)
 		}
+		return nil
+	},
+}
+
+var upsertCmd = &cobra.Command{
+	Use:   "upsert [flags] <SObject> <Expr>",
+	Short: "upsert Salesforce records using the Bulk API",
+	Example: `
+$ batchforce upsert --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%test'" Account '{Name: record.Name + " Copy"}'
+$ batchforce upsert --file accounts.csv Account '{Name: record.Name + " Copy"}'
+	`,
+	DisableFlagsInUseLine: false,
+	Args:                  cobra.ExactValidArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		object := args[0]
+		expr := args[1]
+
+		externalId, _ := cmd.Flags().GetString("external-id")
+
+		query, _ := cmd.Flags().GetString("query")
+		csv, _ := cmd.Flags().GetString("file")
+
+		if query == "" && csv == "" {
+			return fmt.Errorf("Either --query or --file must be set")
+		}
+
+		var execution *Execution
+		var err error
+		if csv != "" {
+			execution, err = NewCSVExecution(object, csv)
+		} else {
+			execution, err = NewQueryExecution(object, query)
+		}
+		if err != nil {
+			log.Fatalf("Could not initialize query: %s", err.Error())
+		}
+		execution.Expr = expr
+		execution.Session = session
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			execution.DryRun = true
+		}
+
+		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
+			execution.BatchSize = batchSize
+		}
+		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
+			execution.Apex = apex
+		}
+
+		jobOptions := []JobOption{Upsert, ExternalId(externalId)}
+		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
+			jobOptions = append(jobOptions, Serialize)
+		}
+		execution.JobOptions = jobOptions
+		errors := execution.Run()
+		if errors.NumberBatchesFailed > 0 {
+			fmt.Println(errors.NumberBatchesFailed, "batch failures")
+			os.Exit(1)
+		}
+		if errors.NumberRecordsFailed > 0 {
+			fmt.Println(errors.NumberRecordsFailed, "record failures")
+			os.Exit(1)
+		}
+		return nil
 	},
 }
 
 var deleteCmd = &cobra.Command{
-	Use:   "delete <SObject> <SOQL> [Expr]",
+	Use:   "delete [flags] <SObject> [Expr]",
 	Short: "delete Salesforce records using the Bulk API",
 	Example: `
-$ batchforce delete Account "SELECT Id FROM Account WHERE Name LIKE '%test'"
-$ batchforce delete Account "SELECT Id, Name FROM Account" 'record.Name matches "\d{3,5}" ? {Id: record.Id} : nil'
+$ batchforce delete --query "SELECT Id FROM Account WHERE Name LIKE Account '%test'"
+$ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name matches "\d{3,5}" ? {Id: record.Id} : nil'
 	`,
-	DisableFlagsInUseLine: true,
-	Args:                  cobra.RangeArgs(2, 3),
-	Run: func(cmd *cobra.Command, args []string) {
+	DisableFlagsInUseLine: false,
+	Args:                  cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		object := args[0]
-		query := args[1]
 		var expr string
-		if len(args) == 3 {
-			expr = args[2]
+		if len(args) == 2 {
+			expr = args[1]
 		} else {
 			expr = "{Id: record.Id}"
 		}
 
-		execution := NewExecution(object, query)
+		query, _ := cmd.Flags().GetString("query")
+		csv, _ := cmd.Flags().GetString("file")
+
+		if query == "" && csv == "" {
+			return fmt.Errorf("Either --query or --file must be set")
+		}
+
+		var execution *Execution
+		var err error
+		if csv != "" {
+			execution, err = NewCSVExecution(object, csv)
+		} else {
+			execution, err = NewQueryExecution(object, query)
+		}
+		if err != nil {
+			log.Fatalf("Could not initialize query: %s", err.Error())
+		}
+
 		execution.Expr = expr
 		execution.Session = session
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
@@ -177,6 +308,7 @@ $ batchforce delete Account "SELECT Id, Name FROM Account" 'record.Name matches 
 			fmt.Println(errors.NumberRecordsFailed, "record failures")
 			os.Exit(1)
 		}
+		return nil
 	},
 }
 
