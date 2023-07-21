@@ -5,9 +5,19 @@ import (
 	"html"
 	"strings"
 
+	force "github.com/ForceCLI/force/lib"
 	"github.com/antonmedv/expr"
 	strip "github.com/grokify/html-strip-tags-go"
 )
+
+type Env map[string]any
+
+func (Env) MergePatch(a force.ForceRecord, b map[string]any) force.ForceRecord {
+	for k, v := range b {
+		a[k] = v
+	}
+	return a
+}
 
 func exprFunctions() []expr.Option {
 	var exprFunctions []expr.Option
@@ -73,6 +83,8 @@ func exprFunctions() []expr.Option {
 		},
 		new(func(string) int64),
 	))
+
+	exprFunctions = append(exprFunctions, expr.Operator("+", "MergePatch"))
 
 	return exprFunctions
 }

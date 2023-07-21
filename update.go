@@ -244,7 +244,7 @@ func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) f
 }
 
 func exprConverter(expression string, context any) func(force.ForceRecord) []force.ForceRecord {
-	env := map[string]interface{}{
+	env := Env{
 		"record": force.ForceRecord{},
 		"apex":   context,
 	}
@@ -253,7 +253,7 @@ func exprConverter(expression string, context any) func(force.ForceRecord) []for
 		log.Fatalln("Invalid expression:", err)
 	}
 	converter := func(record force.ForceRecord) []force.ForceRecord {
-		env := map[string]interface{}{
+		env := Env{
 			"record": record,
 			"apex":   context,
 		}

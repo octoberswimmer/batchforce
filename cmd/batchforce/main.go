@@ -335,6 +335,7 @@ var RootCmd = &cobra.Command{
 	  value
 	- incr: increments the number stored at key by one. set to 0 if not set.
 
+	The + operator can be used to add or update a field on the record object.
 
 	Additional context to be provided to the Expr expression by passing the
 	--context parameter containining anonymous apex to execute before the
