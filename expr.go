@@ -8,6 +8,8 @@ import (
 	force "github.com/ForceCLI/force/lib"
 	"github.com/antonmedv/expr"
 	strip "github.com/grokify/html-strip-tags-go"
+	"github.com/mitchellh/mapstructure"
+	log "github.com/sirupsen/logrus"
 )
 
 type Env map[string]any
@@ -93,4 +95,41 @@ func exprFunctions() []expr.Option {
 	exprFunctions = append(exprFunctions, expr.Operator("-", "DeleteKey"))
 
 	return exprFunctions
+}
+
+func exprConverter(expression string, context any) func(force.ForceRecord) []force.ForceRecord {
+	env := Env{
+		"record": force.ForceRecord{},
+		"apex":   context,
+	}
+	program, err := expr.Compile(expression, append(exprFunctions(), expr.Env(env))...)
+	if err != nil {
+		log.Fatalln("Invalid expression:", err)
+	}
+	converter := func(record force.ForceRecord) []force.ForceRecord {
+		env := Env{
+			"record": record,
+			"apex":   context,
+		}
+		out, err := expr.Run(program, env)
+		if err != nil {
+			panic(err)
+		}
+		if out == nil {
+			return []force.ForceRecord{}
+		}
+		var singleRecord force.ForceRecord
+		err = mapstructure.Decode(out, &singleRecord)
+		if err == nil {
+			return []force.ForceRecord{singleRecord}
+		}
+		var multipleRecords []force.ForceRecord
+		err = mapstructure.Decode(out, &multipleRecords)
+		if err == nil {
+			return multipleRecords
+		}
+		log.Warnln("Unexpected value.  It should be a map or array or maps.  Got", out)
+		return []force.ForceRecord{}
+	}
+	return converter
 }
