@@ -19,6 +19,11 @@ func (Env) MergePatch(a force.ForceRecord, b map[string]any) force.ForceRecord {
 	return a
 }
 
+func (Env) DeleteKey(a force.ForceRecord, b string) force.ForceRecord {
+	delete(a, b)
+	return a
+}
+
 func exprFunctions() []expr.Option {
 	var exprFunctions []expr.Option
 	exprFunctions = append(exprFunctions, expr.Function(
@@ -85,6 +90,7 @@ func exprFunctions() []expr.Option {
 	))
 
 	exprFunctions = append(exprFunctions, expr.Operator("+", "MergePatch"))
+	exprFunctions = append(exprFunctions, expr.Operator("-", "DeleteKey"))
 
 	return exprFunctions
 }
