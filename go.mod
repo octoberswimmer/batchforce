@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/ForceCLI/force v1.0.4-0.20230825222841-5faef9cf786b
-	github.com/antonmedv/expr v1.12.5
+	github.com/antonmedv/expr v1.15.0
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
 	github.com/grokify/html-strip-tags-go v0.0.1
@@ -14,7 +14,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/smacker/go-tree-sitter v0.0.0-20230223055714-4d4cba2a4780
 	github.com/spf13/cobra v1.7.0
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.4
 )
 
 require (
