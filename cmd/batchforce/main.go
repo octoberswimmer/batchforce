@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	force "github.com/ForceCLI/force/lib"
 	. "github.com/octoberswimmer/batchforce"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -107,7 +110,7 @@ $ batchforce update --query "SELECT Id, Type__c FROM Account WHERE RecordType.De
 			jobOptions = append(jobOptions, Serialize)
 		}
 		execution.JobOptions = jobOptions
-		errors := execution.Run()
+		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
@@ -168,7 +171,7 @@ $ batchforce insert --file accounts.csv Account '{Name: record.Name + " Copy"}'
 			jobOptions = append(jobOptions, Serialize)
 		}
 		execution.JobOptions = jobOptions
-		errors := execution.Run()
+		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
@@ -231,7 +234,7 @@ $ batchforce upsert --file accounts.csv Account '{Name: record.Name + " Copy"}'
 			jobOptions = append(jobOptions, Serialize)
 		}
 		execution.JobOptions = jobOptions
-		errors := execution.Run()
+		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
@@ -299,7 +302,7 @@ $ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name 
 		}
 
 		execution.JobOptions = jobOptions
-		errors := execution.Run()
+		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
 			os.Exit(1)
@@ -352,8 +355,28 @@ var RootCmd = &cobra.Command{
 	DisableFlagsInUseLine: true,
 }
 
+func cancelUponSignal(cancel context.CancelFunc) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		interuptsReceived := 0
+		for {
+			<-sigs
+			if interuptsReceived > 0 {
+				os.Exit(1)
+			}
+			log.Println("signal received.  cancelling.")
+			cancel()
+			interuptsReceived++
+		}
+	}()
+}
+
 func Execute() {
-	if err := RootCmd.Execute(); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelUponSignal(cancel)
+	if err := RootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}

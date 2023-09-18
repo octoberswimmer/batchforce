@@ -1,45 +1,58 @@
 package batch
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	force "github.com/ForceCLI/force/lib"
 	"github.com/octoberswimmer/batchforce/soql"
 	log "github.com/sirupsen/logrus"
 )
 
-func processRecordsWithSubQueries(query string, channels ProcessorChannels, converter Converter) {
+func processRecordsWithSubQueries(query string, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {
 	defer func() {
-		close(channels.output)
-		if err := recover(); err != nil {
-			select {
+		close(output)
+		if r := recover(); r != nil {
 			// Make sure sender isn't blocked waiting for us to read
-			case <-channels.input:
-			default:
+			for range input {
 			}
-			log.Errorln("panic occurred:", err)
-			log.Errorln("Sending abort signal")
-			channels.abort <- true
+			err = fmt.Errorf("panic occurred: %s", r)
 		}
 	}()
 
 	subQueryRelationships, err := soql.SubQueryRelationships(query)
 	if err != nil {
-		panic("Failed to parse query for subqueries: " + err.Error())
+		return fmt.Errorf("Failed to parse query for subqueries: %w", err)
 	}
 
-	for record := range channels.input {
-		updates := converter(flattenRecord(record, subQueryRelationships))
-		for _, update := range updates {
-			channels.output <- update
+INPUT:
+	for {
+		select {
+		case record, more := <-input:
+			if !more {
+				log.Info("Done processing input records")
+				break INPUT
+			}
+			flattened, err := flattenRecord(record, subQueryRelationships)
+			if err != nil {
+				return fmt.Errorf("flatten failed: %w", err)
+			}
+			updates := converter(flattened)
+			for _, update := range updates {
+				output <- update
+			}
+		case <-time.After(1 * time.Second):
+			log.Info("Waiting for record to convert")
 		}
 	}
+	return err
 }
 
 // Replace subquery results with the records for the sub-query
-func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) force.ForceRecord {
+func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) (force.ForceRecord, error) {
 	if len(subQueryRelationships) == 0 {
-		return r
+		return r, nil
 	}
 	for k, v := range r {
 		if v == nil {
@@ -50,10 +63,10 @@ func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) f
 			records := subQuery["records"].([]interface{})
 			done := subQuery["done"].(bool)
 			if !done {
-				log.Fatalln("got possible incomplete reesults for " + k + " subquery. done is false, but all results should have been retrieved")
+				return nil, fmt.Errorf("got possible incomplete results for " + k + " subquery. done is false, but all results should have been retrieved")
 			}
 			r[k] = records
 		}
 	}
-	return r
+	return r, nil
 }
