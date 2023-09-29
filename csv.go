@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,7 +10,7 @@ import (
 	csvmap "github.com/recursionpharma/go-csv-map"
 )
 
-func recordsFromCsv(fileName string, processor chan<- force.ForceRecord, abort <-chan bool) error {
+func recordsFromCsv(ctx context.Context, fileName string, processor chan<- force.ForceRecord) error {
 	defer close(processor)
 
 	f, err := os.Open(fileName)
@@ -31,8 +32,8 @@ func recordsFromCsv(fileName string, processor chan<- force.ForceRecord, abort <
 			return fmt.Errorf("failed to read csv row: %w", err)
 		}
 		select {
-		case <-abort:
-			break
+		case <-ctx.Done():
+			return fmt.Errorf("Cancelled: %w", ctx.Err())
 		default:
 			r := force.ForceRecord{}
 			for k, v := range row {

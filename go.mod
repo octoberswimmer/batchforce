@@ -3,7 +3,7 @@ module github.com/octoberswimmer/batchforce
 go 1.18
 
 require (
-	github.com/ForceCLI/force v1.0.4-0.20230825222841-5faef9cf786b
+	github.com/ForceCLI/force v1.0.5-0.20230919141728-5ec83adfb775
 	github.com/antonmedv/expr v1.15.0
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
@@ -31,8 +31,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/net v0.14.0 // indirect
-	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/net v0.15.0 // indirect
+	golang.org/x/sys v0.12.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

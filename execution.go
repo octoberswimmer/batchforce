@@ -2,6 +2,7 @@ package batch
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -32,13 +33,7 @@ type Execution struct {
 
 // Arbitrary function that can send ForceRecord's and stop sending on abort.RecordSender
 // A RecordSender should close the records channel when it's done writing.
-type RecordSender func(records chan<- force.ForceRecord, abort <-chan bool) error
-
-type ProcessorChannels struct {
-	input  <-chan force.ForceRecord
-	output chan<- force.ForceRecord
-	abort  chan<- bool
-}
+type RecordSender func(ctx context.Context, records chan<- force.ForceRecord) error
 
 type Batch []force.ForceRecord
 type Converter func(force.ForceRecord) []force.ForceRecord
@@ -82,56 +77,86 @@ func NewRecordSenderExecution(object string, sender RecordSender) (*Execution, e
 }
 
 func (e *Execution) Execute() (force.JobInfo, error) {
-	var context any
+	return e.ExecuteContext(context.Background())
+}
+
+func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
+	var apexContext any
 	var err error
 	var result force.JobInfo
 	if e.Apex != "" {
-		context, err = e.getApexContext()
+		apexContext, err = e.getApexContext()
 		if err != nil {
 			return result, fmt.Errorf("Unable to get apex context: %w", err)
 		}
 	}
 	if e.Expr != "" {
-		e.Converter = exprConverter(e.Expr, context)
+		e.Converter = exprConverter(e.Expr, apexContext)
 	} else if e.Converter == nil {
 		return result, fmt.Errorf("Expr or Converter must be defined")
 	}
 
 	session := e.session()
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
-	abortChannel := make(chan bool)
 	jobResult := make(chan force.JobInfo)
-	go e.update(updates, jobResult)
+	jobError := make(chan error)
+	go func() {
+		result, err := e.update(ctx, updates)
+		cancel()
+		jobResult <- result
+		jobError <- err
+	}()
 	switch {
 	case e.Query != "":
-		go processRecordsWithSubQueries(e.Query, ProcessorChannels{input: queried, output: updates, abort: abortChannel}, e.Converter)
-		err = session.AbortableQueryAndSend(e.Query, queried, abortChannel)
+		go func() {
+			err = processRecordsWithSubQueries(e.Query, queried, updates, e.Converter)
+			if err != nil {
+				cancel()
+				log.Warn(err.Error())
+			}
+		}()
+		err = session.CancelableQueryAndSend(ctx, e.Query, queried)
 		if err != nil {
-			return result, fmt.Errorf("Query failed: %w", err)
+			cancel()
+			log.Errorf("Query failed: %s", err)
 		}
 	case e.CsvFile != "":
-		go processRecords(ProcessorChannels{input: queried, output: updates, abort: abortChannel}, e.Converter)
-		err = recordsFromCsv(e.CsvFile, queried, abortChannel)
+		go func() {
+			err = processRecords(queried, updates, e.Converter)
+			if err != nil {
+				cancel()
+				log.Warn(err.Error())
+			}
+		}()
+		err = recordsFromCsv(ctx, e.CsvFile, queried)
 		if err != nil {
-			return result, fmt.Errorf("Failed to read file: %w", err)
+			cancel()
+			log.Errorf("Failed to read file: %s", err)
 		}
 	case e.RecordSender != nil:
-		go processRecords(ProcessorChannels{input: queried, output: updates, abort: abortChannel}, e.Converter)
-		err = e.RecordSender(queried, abortChannel)
+		go func() {
+			err = processRecords(queried, updates, e.Converter)
+			if err != nil {
+				cancel()
+				log.Warn(err.Error())
+			}
+		}()
+		err = e.RecordSender(ctx, queried)
 		if err != nil {
-			return result, fmt.Errorf("Query failed: %w", err)
+			cancel()
+			log.Errorf("Query failed: %s", err)
 		}
 	default:
 		return result, fmt.Errorf("No input defined")
 	}
-	select {
-	case result = <-jobResult:
-		return result, nil
-	case <-abortChannel:
-		return result, fmt.Errorf("Aborted")
-	}
+	result = <-jobResult
+	err = <-jobError
+	return result, err
 }
 
 func (e *Execution) JobResults(job *force.JobInfo) (force.BatchResult, error) {
@@ -151,15 +176,25 @@ func (e *Execution) JobResults(job *force.JobInfo) (force.BatchResult, error) {
 	return results, nil
 }
 
-func (e *Execution) Run() force.JobInfo {
-	job, err := e.Execute()
+func (e *Execution) RunContext(ctx context.Context) force.JobInfo {
+	job, err := e.ExecuteContext(ctx)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
 	return job
 }
 
-func (e *Execution) update(records <-chan force.ForceRecord, result chan<- force.JobInfo) {
+func (e *Execution) Run() force.JobInfo {
+	return e.RunContext(context.Background())
+}
+
+func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord) (force.JobInfo, error) {
+	defer func() {
+		for range records {
+		}
+	}()
+
+	var status force.JobInfo
 	job := force.JobInfo{}
 	job.Operation = "update"
 	job.ContentType = "JSON"
@@ -171,51 +206,77 @@ func (e *Execution) update(records <-chan force.ForceRecord, result chan<- force
 
 	jobInfo, err := e.Session.CreateBulkJob(job)
 	if err != nil {
-		log.Fatalln("Failed to create bulk job: " + err.Error())
+		return status, fmt.Errorf("Failed to create bulk job: %w", err)
 	}
 	log.Infof("Created job %s\n", jobInfo.Id)
 	batch := make(Batch, 0, e.BatchSize)
 
-	sendBatch := func() {
+	sendBatch := func() error {
 		updates, err := batch.marshallForBulkJob(job)
 		if err != nil {
-			log.Fatalln("Failed to serialize batch: " + err.Error())
+			return fmt.Errorf("Failed to serialize batch: %w", err)
 		}
 		log.Infof("Adding batch of %d records to job %s\n", len(batch), jobInfo.Id)
 		_, err = e.Session.AddBatchToJob(string(updates), jobInfo)
 		if err != nil {
-			log.Fatalln("Failed to enqueue batch: " + err.Error())
+			return fmt.Errorf("Failed to enqueue batch: %w", err)
 		}
 		batch = make(Batch, 0, e.BatchSize)
+		return nil
 	}
 
-	for record := range records {
-		if e.DryRun {
-			j, err := json.Marshal(record)
-			if err != nil {
-				log.Warnf("Invalid update: %s", err.Error())
-			} else {
-				fmt.Println(string(j))
+RECORDS:
+	for {
+		select {
+		case <-ctx.Done():
+			log.Warn("Context cancelled. Not sending more records to bulk job.")
+			for range records {
+				// drain records
 			}
-			continue
-		}
-		batch = append(batch, record)
-		if len(batch) == e.BatchSize {
-			sendBatch()
+			break RECORDS
+		case record := <-records:
+			if record == nil {
+				break RECORDS
+			}
+			if e.DryRun {
+				j, err := json.Marshal(record)
+				if err != nil {
+					log.Warnf("Invalid update: %s", err.Error())
+				} else {
+					fmt.Println(string(j))
+				}
+				continue
+			}
+			batch = append(batch, record)
+			if len(batch) == e.BatchSize {
+				err := sendBatch()
+				if err != nil {
+					log.Error(err.Error())
+					break RECORDS
+				}
+			}
 		}
 	}
 	if len(batch) > 0 {
-		sendBatch()
+		err = sendBatch()
+		if err != nil {
+			log.Error(err.Error())
+		}
 	}
+	log.Info("Closing bulk job")
 	jobInfo, err = e.Session.CloseBulkJob(jobInfo.Id)
 	if err != nil {
-		log.Fatalln("Failed to close bulk job: " + err.Error())
+		return status, fmt.Errorf("Failed to close bulk job: %w", err)
 	}
-	var status force.JobInfo
 	for {
+		select {
+		case <-ctx.Done():
+			return status, fmt.Errorf("Cancelling wait for bulk job completion: %w", ctx.Err())
+		default:
+		}
 		status, err = e.Session.GetJobInfo(jobInfo.Id)
 		if err != nil {
-			log.Fatalln("Failed to get bulk job status: " + err.Error())
+			return status, fmt.Errorf("Failed to get bulk job status: %w", err)
 		}
 		force.DisplayJobInfo(status, os.Stderr)
 		if status.NumberBatchesCompleted+status.NumberBatchesFailed == status.NumberBatchesTotal {
@@ -223,30 +284,37 @@ func (e *Execution) update(records <-chan force.ForceRecord, result chan<- force
 		}
 		time.Sleep(2000 * time.Millisecond)
 	}
-	result <- status
+	return status, nil
 }
 
-func processRecords(channels ProcessorChannels, converter Converter) {
+func processRecords(input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {
 	defer func() {
-		close(channels.output)
-		if err := recover(); err != nil {
-			select {
+		close(output)
+		if r := recover(); r != nil {
 			// Make sure sender isn't blocked waiting for us to read
-			case <-channels.input:
-			default:
+			for range input {
 			}
-			log.Errorln("panic occurred:", err)
-			log.Errorln("Sending abort signal")
-			channels.abort <- true
+			err = fmt.Errorf("panic occurred: %s", r)
 		}
 	}()
 
-	for record := range channels.input {
-		updates := converter(record)
-		for _, update := range updates {
-			channels.output <- update
+INPUT:
+	for {
+		select {
+		case record, more := <-input:
+			if !more {
+				log.Info("Done processing input records")
+				break INPUT
+			}
+			updates := converter(record)
+			for _, update := range updates {
+				output <- update
+			}
+		case <-time.After(1 * time.Second):
+			log.Info("Waiting for record to convert")
 		}
 	}
+	return nil
 }
 
 func (e *Execution) session() *force.Force {
