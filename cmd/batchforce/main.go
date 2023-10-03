@@ -51,6 +51,7 @@ func init() {
 	RootCmd.AddCommand(insertCmd)
 	RootCmd.AddCommand(upsertCmd)
 	RootCmd.AddCommand(deleteCmd)
+	RootCmd.AddCommand(versionCmd)
 
 	RootCmd.PersistentFlags().StringP("account", "a", "", "account `username` to use")
 }
@@ -393,4 +394,16 @@ func initializeSession(cmd *cobra.Command) {
 		fmt.Fprintf(os.Stderr, "Could not initialize session: "+err.Error())
 		os.Exit(1)
 	}
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Display current version",
+	Example: `
+  batchforce version
+`,
+	Args: cobra.MaximumNArgs(0),
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(Version)
+	},
 }
