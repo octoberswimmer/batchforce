@@ -12,7 +12,7 @@ default:
 	go build -o ${EXECUTABLE} ${LDFLAGS} ${PACKAGE}
 
 install:
-	go install ${LDFLAGS}
+	go install ${LDFLAGS} ${PACKAGE}
 
 #$(WINDOWS): checkcmd-x86_64-w64-mingw32-gcc checkcmd-x86_64-w64-mingw32-g++
 #	env \
