@@ -46,6 +46,7 @@ func init() {
 	deleteCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
 	deleteCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
 	deleteCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
+	deleteCmd.Flags().Bool("hard-delete", false, "hard delete records.  Bypass recycle bin and hard delete records")
 
 	RootCmd.AddCommand(updateCmd)
 	RootCmd.AddCommand(insertCmd)
@@ -298,6 +299,9 @@ $ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name 
 		}
 
 		jobOptions := []JobOption{Delete}
+		if hardDelete, _ := cmd.Flags().GetBool("hard-delete"); hardDelete {
+			jobOptions = append(jobOptions, HardDelete)
+		}
 		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
 			jobOptions = append(jobOptions, Serialize)
 		}
