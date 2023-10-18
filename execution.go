@@ -25,6 +25,7 @@ type Execution struct {
 	Converter Converter
 
 	Query        string
+	QueryAll     bool
 	CsvFile      string
 	RecordSender RecordSender
 
@@ -136,7 +137,13 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 	}()
 	switch {
 	case e.Query != "":
-		err = session.CancelableQueryAndSend(ctx, e.Query, queried)
+		var queryOptions []func(*force.QueryOptions)
+		if e.QueryAll {
+			queryOptions = append(queryOptions, func(options *force.QueryOptions) {
+				options.QueryAll = true
+			})
+		}
+		err = session.CancelableQueryAndSend(ctx, e.Query, queried, queryOptions...)
 		if err != nil {
 			cancel()
 			log.Errorf("Query failed: %s", err)

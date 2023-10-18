@@ -16,36 +16,25 @@ import (
 var session *force.Force
 
 func init() {
-	updateCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
-	updateCmd.Flags().StringP("file", "f", "", "CSV file for input data")
-	updateCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
-	updateCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
-	updateCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
-	updateCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
+	for _, cmd := range []*cobra.Command{updateCmd, insertCmd, upsertCmd, deleteCmd} {
+		cmd.Flags().StringP("query", "q", "", "SOQL query for input data")
+		cmd.Flags().String("query-all", "", "query all records (including archived/deleted records)")
+		cmd.Flags().StringP("file", "f", "", "CSV file for input data")
 
-	insertCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
-	insertCmd.Flags().StringP("file", "f", "", "CSV file for input data")
-	insertCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
-	insertCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
-	insertCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
-	insertCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
+		cmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
 
-	upsertCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
-	upsertCmd.Flags().StringP("file", "f", "", "CSV file for input data")
+		cmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
+		cmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
+
+		cmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
+		cmd.MarkFlagsMutuallyExclusive("query", "query-all")
+		cmd.MarkFlagsMutuallyExclusive("query", "file")
+		cmd.MarkFlagsMutuallyExclusive("file", "query-all")
+	}
+
 	upsertCmd.Flags().StringP("external-id", "e", "", "external id")
-	upsertCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
-	upsertCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
-	upsertCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
-	upsertCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
-
 	upsertCmd.MarkFlagRequired("external-id")
 
-	deleteCmd.Flags().StringP("query", "q", "", "SOQL query for input data")
-	deleteCmd.Flags().StringP("file", "f", "", "CSV file for input data")
-	deleteCmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
-	deleteCmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
-	deleteCmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
-	deleteCmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
 	deleteCmd.Flags().Bool("hard-delete", false, "hard delete records.  Bypass recycle bin and hard delete records")
 
 	RootCmd.AddCommand(updateCmd)
@@ -61,6 +50,57 @@ func main() {
 	Execute()
 }
 
+func getExecution(cmd *cobra.Command, args []string) (*Execution, error) {
+	var execution *Execution
+	object := args[0]
+	expr := args[1]
+
+	query, _ := cmd.Flags().GetString("query-all")
+	queryAll := query != ""
+	if query == "" {
+		query, _ = cmd.Flags().GetString("query")
+	}
+	csv, _ := cmd.Flags().GetString("file")
+
+	if query == "" && csv == "" {
+		return execution, fmt.Errorf("Either --query/--query-all or --file must be set")
+	}
+
+	var err error
+	if csv != "" {
+		execution, err = NewCSVExecution(object, csv)
+		if err != nil {
+			log.Fatalf("Could not initialize csv import: %s", err.Error())
+		}
+	} else {
+		execution, err = NewQueryExecution(object, query)
+		if err != nil {
+			log.Fatalf("Could not initialize query: %s", err.Error())
+		}
+		execution.QueryAll = queryAll
+	}
+
+	execution.Expr = expr
+	execution.Session = session
+	if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+		execution.DryRun = true
+	}
+
+	if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
+		execution.BatchSize = batchSize
+	}
+	if apex, _ := cmd.Flags().GetString("context"); apex != "" {
+		execution.Apex = apex
+	}
+
+	var jobOptions []JobOption
+	if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
+		jobOptions = append(jobOptions, Serialize)
+	}
+	execution.JobOptions = jobOptions
+	return execution, nil
+}
+
 var updateCmd = &cobra.Command{
 	Use:   "update [flags] <SObject> <Expr>",
 	Short: "Update Salesforce records using the Bulk API",
@@ -73,45 +113,10 @@ $ batchforce update --query "SELECT Id, Type__c FROM Account WHERE RecordType.De
 	DisableFlagsInUseLine: false,
 	Args:                  cobra.ExactValidArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		object := args[0]
-		expr := args[1]
-
-		query, _ := cmd.Flags().GetString("query")
-		csv, _ := cmd.Flags().GetString("file")
-
-		if query == "" && csv == "" {
-			return fmt.Errorf("Either --query or --file must be set")
-		}
-
-		var execution *Execution
-		var err error
-		if csv != "" {
-			execution, err = NewCSVExecution(object, csv)
-		} else {
-			execution, err = NewQueryExecution(object, query)
-		}
+		execution, err := getExecution(cmd, args)
 		if err != nil {
-			log.Fatalf("Could not initialize query: %s", err.Error())
+			return err
 		}
-
-		execution.Expr = expr
-		execution.Session = session
-		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			execution.DryRun = true
-		}
-
-		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
-			execution.BatchSize = batchSize
-		}
-		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
-			execution.Apex = apex
-		}
-
-		var jobOptions []JobOption
-		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
-			jobOptions = append(jobOptions, Serialize)
-		}
-		execution.JobOptions = jobOptions
 		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
@@ -135,44 +140,11 @@ $ batchforce insert --file accounts.csv Account '{Name: record.Name + " Copy"}'
 	DisableFlagsInUseLine: false,
 	Args:                  cobra.ExactValidArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		object := args[0]
-		expr := args[1]
-
-		query, _ := cmd.Flags().GetString("query")
-		csv, _ := cmd.Flags().GetString("file")
-
-		if query == "" && csv == "" {
-			return fmt.Errorf("Either --query or --file must be set")
-		}
-
-		var execution *Execution
-		var err error
-		if csv != "" {
-			execution, err = NewCSVExecution(object, csv)
-		} else {
-			execution, err = NewQueryExecution(object, query)
-		}
+		execution, err := getExecution(cmd, args)
 		if err != nil {
-			log.Fatalf("Could not initialize query: %s", err.Error())
+			return err
 		}
-		execution.Expr = expr
-		execution.Session = session
-		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			execution.DryRun = true
-		}
-
-		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
-			execution.BatchSize = batchSize
-		}
-		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
-			execution.Apex = apex
-		}
-
-		jobOptions := []JobOption{Insert}
-		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
-			jobOptions = append(jobOptions, Serialize)
-		}
-		execution.JobOptions = jobOptions
+		execution.JobOptions = append(execution.JobOptions, Insert)
 		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
@@ -196,46 +168,12 @@ $ batchforce upsert --file accounts.csv Account '{Name: record.Name + " Copy"}'
 	DisableFlagsInUseLine: false,
 	Args:                  cobra.ExactValidArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		object := args[0]
-		expr := args[1]
-
-		externalId, _ := cmd.Flags().GetString("external-id")
-
-		query, _ := cmd.Flags().GetString("query")
-		csv, _ := cmd.Flags().GetString("file")
-
-		if query == "" && csv == "" {
-			return fmt.Errorf("Either --query or --file must be set")
-		}
-
-		var execution *Execution
-		var err error
-		if csv != "" {
-			execution, err = NewCSVExecution(object, csv)
-		} else {
-			execution, err = NewQueryExecution(object, query)
-		}
+		execution, err := getExecution(cmd, args)
 		if err != nil {
-			log.Fatalf("Could not initialize query: %s", err.Error())
+			return err
 		}
-		execution.Expr = expr
-		execution.Session = session
-		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			execution.DryRun = true
-		}
-
-		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
-			execution.BatchSize = batchSize
-		}
-		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
-			execution.Apex = apex
-		}
-
-		jobOptions := []JobOption{Upsert, ExternalId(externalId)}
-		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
-			jobOptions = append(jobOptions, Serialize)
-		}
-		execution.JobOptions = jobOptions
+		externalId, _ := cmd.Flags().GetString("external-id")
+		execution.JobOptions = append(execution.JobOptions, Upsert, ExternalId(externalId))
 		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
@@ -259,54 +197,18 @@ $ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name 
 	DisableFlagsInUseLine: false,
 	Args:                  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		object := args[0]
-		var expr string
-		if len(args) == 2 {
-			expr = args[1]
-		} else {
-			expr = "{Id: record.Id}"
+		if len(args) == 1 {
+			args = append(args, "{Id: record.Id}")
 		}
-
-		query, _ := cmd.Flags().GetString("query")
-		csv, _ := cmd.Flags().GetString("file")
-
-		if query == "" && csv == "" {
-			return fmt.Errorf("Either --query or --file must be set")
-		}
-
-		var execution *Execution
-		var err error
-		if csv != "" {
-			execution, err = NewCSVExecution(object, csv)
-		} else {
-			execution, err = NewQueryExecution(object, query)
-		}
+		execution, err := getExecution(cmd, args)
 		if err != nil {
-			log.Fatalf("Could not initialize query: %s", err.Error())
+			return err
 		}
-
-		execution.Expr = expr
-		execution.Session = session
-		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			execution.DryRun = true
-		}
-
-		if batchSize, _ := cmd.Flags().GetInt("batch-size"); batchSize > 0 {
-			execution.BatchSize = batchSize
-		}
-		if apex, _ := cmd.Flags().GetString("context"); apex != "" {
-			execution.Apex = apex
-		}
-
-		jobOptions := []JobOption{Delete}
 		if hardDelete, _ := cmd.Flags().GetBool("hard-delete"); hardDelete {
-			jobOptions = append(jobOptions, HardDelete)
+			execution.JobOptions = append(execution.JobOptions, HardDelete)
+		} else {
+			execution.JobOptions = append(execution.JobOptions, Delete)
 		}
-		if serialize, _ := cmd.Flags().GetBool("serialize"); serialize {
-			jobOptions = append(jobOptions, Serialize)
-		}
-
-		execution.JobOptions = jobOptions
 		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed > 0 {
 			fmt.Println(errors.NumberBatchesFailed, "batch failures")
