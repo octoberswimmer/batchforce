@@ -83,17 +83,28 @@ func (e *Execution) Execute() (force.JobInfo, error) {
 func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 	var apexContext any
 	var err error
-	var result force.JobInfo
+	type BulkJobResult struct {
+		force.JobInfo
+		err error
+	}
+	var result BulkJobResult
 	if e.Apex != "" {
 		apexContext, err = e.getApexContext()
 		if err != nil {
-			return result, fmt.Errorf("Unable to get apex context: %w", err)
+			return result.JobInfo, fmt.Errorf("Unable to get apex context: %w", err)
 		}
 	}
 	if e.Expr != "" {
 		e.Converter = exprConverter(e.Expr, apexContext)
 	} else if e.Converter == nil {
-		return result, fmt.Errorf("Expr or Converter must be defined")
+		return result.JobInfo, fmt.Errorf("Expr or Converter must be defined")
+	}
+	converter := e.Converter
+	if e.Query != "" {
+		converter, err = makeFlatteningConverter(e.Query, converter)
+		if err != nil {
+			return result.JobInfo, fmt.Errorf("Unable to get make converter: %w", err)
+		}
 	}
 
 	session := e.session()
@@ -103,60 +114,49 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
-	jobResult := make(chan force.JobInfo)
-	jobError := make(chan error)
+	jobResult := make(chan BulkJobResult)
+	// Start converter that takes input data, converts it to zero or more output
+	// records and sends them to the bulk job
+	go func() {
+		err = processRecords(ctx, queried, updates, converter)
+		if err != nil {
+			cancel()
+			log.Warn(err.Error())
+		}
+	}()
+	// Start job that sends records to the Bulk API
 	go func() {
 		result, err := e.update(ctx, updates)
 		cancel()
-		jobResult <- result
-		jobError <- err
+		jobResult <- BulkJobResult{
+			JobInfo: result,
+			err:     err,
+		}
 	}()
 	switch {
 	case e.Query != "":
-		go func() {
-			err = processRecordsWithSubQueries(e.Query, queried, updates, e.Converter)
-			if err != nil {
-				cancel()
-				log.Warn(err.Error())
-			}
-		}()
 		err = session.CancelableQueryAndSend(ctx, e.Query, queried)
 		if err != nil {
 			cancel()
 			log.Errorf("Query failed: %s", err)
 		}
 	case e.CsvFile != "":
-		go func() {
-			err = processRecords(queried, updates, e.Converter)
-			if err != nil {
-				cancel()
-				log.Warn(err.Error())
-			}
-		}()
 		err = recordsFromCsv(ctx, e.CsvFile, queried)
 		if err != nil {
 			cancel()
 			log.Errorf("Failed to read file: %s", err)
 		}
 	case e.RecordSender != nil:
-		go func() {
-			err = processRecords(queried, updates, e.Converter)
-			if err != nil {
-				cancel()
-				log.Warn(err.Error())
-			}
-		}()
 		err = e.RecordSender(ctx, queried)
 		if err != nil {
 			cancel()
-			log.Errorf("Query failed: %s", err)
+			log.Errorf("RecordSender failed: %s", err)
 		}
 	default:
-		return result, fmt.Errorf("No input defined")
+		return result.JobInfo, fmt.Errorf("No input defined")
 	}
 	result = <-jobResult
-	err = <-jobError
-	return result, err
+	return result.JobInfo, result.err
 }
 
 func (e *Execution) JobResults(job *force.JobInfo) (force.BatchResult, error) {
@@ -191,9 +191,9 @@ func (e *Execution) Run() force.JobInfo {
 func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord) (force.JobInfo, error) {
 	defer func() {
 		for range records {
+			// drain records
 		}
 	}()
-
 	var status force.JobInfo
 	job := force.JobInfo{}
 	job.Operation = "update"
@@ -230,12 +230,9 @@ RECORDS:
 		select {
 		case <-ctx.Done():
 			log.Warn("Context cancelled. Not sending more records to bulk job.")
-			for range records {
-				// drain records
-			}
 			break RECORDS
-		case record := <-records:
-			if record == nil {
+		case record, ok := <-records:
+			if !ok {
 				break RECORDS
 			}
 			if e.DryRun {
@@ -287,13 +284,13 @@ RECORDS:
 	return status, nil
 }
 
-func processRecords(input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {
+func processRecords(ctx context.Context, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {
 	defer func() {
 		close(output)
+		for range input {
+			// drain records
+		}
 		if r := recover(); r != nil {
-			// Make sure sender isn't blocked waiting for us to read
-			for range input {
-			}
 			err = fmt.Errorf("panic occurred: %s", r)
 		}
 	}()
@@ -308,7 +305,10 @@ INPUT:
 			}
 			updates := converter(record)
 			for _, update := range updates {
-				output <- update
+				select {
+				case <-ctx.Done():
+				case output <- update:
+				}
 			}
 		case <-time.After(1 * time.Second):
 			log.Info("Waiting for record to convert")

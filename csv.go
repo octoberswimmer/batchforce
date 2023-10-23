@@ -31,14 +31,14 @@ func recordsFromCsv(ctx context.Context, fileName string, processor chan<- force
 		if err != nil {
 			return fmt.Errorf("failed to read csv row: %w", err)
 		}
+		r := force.ForceRecord{}
+		for k, v := range row {
+			r[k] = any(v)
+		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("Cancelled: %w", ctx.Err())
 		default:
-			r := force.ForceRecord{}
-			for k, v := range row {
-				r[k] = any(v)
-			}
 			processor <- r
 		}
 	}
