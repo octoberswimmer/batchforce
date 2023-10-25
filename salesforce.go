@@ -3,50 +3,24 @@ package batch
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	force "github.com/ForceCLI/force/lib"
 	"github.com/octoberswimmer/batchforce/soql"
-	log "github.com/sirupsen/logrus"
 )
 
-func processRecordsWithSubQueries(query string, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {
-	defer func() {
-		close(output)
-		if r := recover(); r != nil {
-			// Make sure sender isn't blocked waiting for us to read
-			for range input {
-			}
-			err = fmt.Errorf("panic occurred: %s", r)
-		}
-	}()
-
+func makeFlatteningConverter(query string, converter Converter) (Converter, error) {
 	subQueryRelationships, err := soql.SubQueryRelationships(query)
 	if err != nil {
-		return fmt.Errorf("Failed to parse query for subqueries: %w", err)
+		return nil, fmt.Errorf("Failed to parse query for subqueries: %w", err)
 	}
-
-INPUT:
-	for {
-		select {
-		case record, more := <-input:
-			if !more {
-				log.Info("Done processing input records")
-				break INPUT
-			}
-			flattened, err := flattenRecord(record, subQueryRelationships)
-			if err != nil {
-				return fmt.Errorf("flatten failed: %w", err)
-			}
-			updates := converter(flattened)
-			for _, update := range updates {
-				output <- update
-			}
-		case <-time.After(1 * time.Second):
-			log.Info("Waiting for record to convert")
+	flatteningConverter := func(record force.ForceRecord) []force.ForceRecord {
+		flattened, err := flattenRecord(record, subQueryRelationships)
+		if err != nil {
+			panic("Could not flatten record: " + err.Error())
 		}
+		return converter(flattened)
 	}
-	return err
+	return flatteningConverter, nil
 }
 
 // Replace subquery results with the records for the sub-query
