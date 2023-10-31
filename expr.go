@@ -2,8 +2,10 @@ package batch
 
 import (
 	b64 "encoding/base64"
+	"fmt"
 	"html"
 	"strings"
+	"unicode"
 
 	force "github.com/ForceCLI/force/lib"
 	"github.com/antonmedv/expr"
@@ -26,6 +28,19 @@ func (Env) DeleteKey(a force.ForceRecord, b string) force.ForceRecord {
 	return a
 }
 
+// Escape any non-ASCII characters like Apex's String.escapeUnicode.
+func escapeUnicode(s string) string {
+	var result strings.Builder
+	for _, rune := range s {
+		if rune > unicode.MaxASCII {
+			result.WriteString(fmt.Sprintf("\\u%04X", rune))
+		} else {
+			result.WriteRune(rune)
+		}
+	}
+	return result.String()
+}
+
 func exprFunctions() []expr.Option {
 	var exprFunctions []expr.Option
 	exprFunctions = append(exprFunctions, expr.Function(
@@ -40,6 +55,14 @@ func exprFunctions() []expr.Option {
 		"stripHtml",
 		func(params ...any) (any, error) {
 			return strip.StripTags(params[0].(string)), nil
+		},
+		new(func(string) string),
+	))
+
+	exprFunctions = append(exprFunctions, expr.Function(
+		"escapeUnicode",
+		func(params ...any) (any, error) {
+			return escapeUnicode(params[0].(string)), nil
 		},
 		new(func(string) string),
 	))
