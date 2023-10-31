@@ -339,6 +339,8 @@ var RootCmd = &cobra.Command{
 	- stripHtml: removes HTML tags
 	- escapeHtml: escapes characters using HTML entities like Apex's
 	  String.escapeHtml4 method
+	- escapeUnicode: escapes characters using Unicode escape sequences
+	  like Apex's String.escapeUnicode method
 	- base64: base-64 encodes input
 	- compareAndSet: check if key maps to value; if key doesn't exist, set it to
 	  value
