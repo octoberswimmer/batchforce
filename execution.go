@@ -20,8 +20,9 @@ type Execution struct {
 	JobOptions []JobOption
 	Object     string
 	Apex       string
-	Expr       string
-	Converter  Converter
+
+	Expr      string
+	Converter Converter
 
 	Query        string
 	CsvFile      string
@@ -31,7 +32,7 @@ type Execution struct {
 	BatchSize int
 }
 
-// Arbitrary function that can send ForceRecord's and stop sending on abort.RecordSender
+// Arbitrary function that can send ForceRecord's.
 // A RecordSender should close the records channel when it's done writing.
 type RecordSender func(ctx context.Context, records chan<- force.ForceRecord) error
 
@@ -168,7 +169,7 @@ func (e *Execution) JobResults(job *force.JobInfo) (force.BatchResult, error) {
 	for _, b := range batches {
 		result, err := e.Session.RetrieveBulkBatchResults(job.Id, b.Id)
 		if err != nil {
-			return force.BatchResult{}, fmt.Errorf("Failed to retrieve batche: %w", err)
+			return force.BatchResult{}, fmt.Errorf("Failed to retrieve batch: %w", err)
 		}
 		results = append(results, result...)
 	}
@@ -310,6 +311,8 @@ INPUT:
 				case output <- update:
 				}
 			}
+		case <-ctx.Done():
+			return fmt.Errorf("Processing cancelled: %w", ctx.Err())
 		case <-time.After(1 * time.Second):
 			log.Info("Waiting for record to convert")
 		}
