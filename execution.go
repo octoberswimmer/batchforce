@@ -269,7 +269,7 @@ RECORDS:
 		}
 	}
 	log.Info("Closing bulk job")
-	jobInfo, err = e.Session.CloseBulkJob(jobInfo.Id)
+	jobInfo, err = e.Session.CloseBulkJobWithContext(ctx, jobInfo.Id)
 	if err != nil {
 		return status, fmt.Errorf("Failed to close bulk job: %w", err)
 	}
