@@ -196,13 +196,7 @@ func (e *Execution) Run() force.JobInfo {
 	return e.RunContext(context.Background())
 }
 
-func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord) (force.JobInfo, error) {
-	defer func() {
-		for range records {
-			// drain records
-		}
-	}()
-	var status force.JobInfo
+func (e *Execution) startJob() (force.JobInfo, error) {
 	job := force.JobInfo{}
 	job.Operation = "update"
 	job.ContentType = "JSON"
@@ -214,9 +208,20 @@ func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord
 
 	jobInfo, err := e.Session.CreateBulkJob(job)
 	if err != nil {
-		return status, fmt.Errorf("Failed to create bulk job: %w", err)
+		return jobInfo, fmt.Errorf("Failed to create bulk job: %w", err)
 	}
-	log.Infof("Created job %s\n", jobInfo.Id)
+	return jobInfo, nil
+}
+
+func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord) (force.JobInfo, error) {
+	defer func() {
+		for range records {
+			// drain records
+		}
+	}()
+	var job force.JobInfo
+	var err error
+
 	batch := make(Batch, 0, e.BatchSize)
 
 	sendBatch := func() error {
@@ -224,8 +229,8 @@ func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord
 		if err != nil {
 			return fmt.Errorf("Failed to serialize batch: %w", err)
 		}
-		log.Infof("Adding batch of %d records to job %s\n", len(batch), jobInfo.Id)
-		_, err = e.Session.AddBatchToJob(string(updates), jobInfo)
+		log.Infof("Adding batch of %d records to job %s\n", len(batch), job.Id)
+		_, err = e.Session.AddBatchToJob(string(updates), job)
 		if err != nil {
 			return fmt.Errorf("Failed to enqueue batch: %w", err)
 		}
@@ -252,6 +257,13 @@ RECORDS:
 				}
 				continue
 			}
+			if job.Id == "" {
+				job, err = e.startJob()
+				if err != nil {
+					return job, err
+				}
+				log.Infof("Created job %s\n", job.Id)
+			}
 			batch = append(batch, record)
 			if len(batch) == e.BatchSize {
 				err := sendBatch()
@@ -263,33 +275,37 @@ RECORDS:
 		}
 	}
 	if len(batch) > 0 {
-		err = sendBatch()
+		err := sendBatch()
 		if err != nil {
 			log.Error(err.Error())
 		}
 	}
+	if job.Id == "" {
+		log.Info("Bulk job not started")
+		return job, nil
+	}
 	log.Info("Closing bulk job")
-	jobInfo, err = e.Session.CloseBulkJobWithContext(ctx, jobInfo.Id)
+	job, err = e.Session.CloseBulkJobWithContext(ctx, job.Id)
 	if err != nil {
-		return status, fmt.Errorf("Failed to close bulk job: %w", err)
+		return job, fmt.Errorf("Failed to close bulk job: %w", err)
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			return status, fmt.Errorf("Cancelling wait for bulk job completion: %w", ctx.Err())
+			return job, fmt.Errorf("Cancelling wait for bulk job completion: %w", ctx.Err())
 		default:
 		}
-		status, err = e.Session.GetJobInfo(jobInfo.Id)
+		job, err = e.Session.GetJobInfo(job.Id)
 		if err != nil {
-			return status, fmt.Errorf("Failed to get bulk job status: %w", err)
+			return job, fmt.Errorf("Failed to get bulk job status: %w", err)
 		}
-		force.DisplayJobInfo(status, os.Stderr)
-		if status.NumberBatchesCompleted+status.NumberBatchesFailed == status.NumberBatchesTotal {
+		force.DisplayJobInfo(job, os.Stderr)
+		if job.NumberBatchesCompleted+job.NumberBatchesFailed == job.NumberBatchesTotal {
 			break
 		}
 		time.Sleep(2000 * time.Millisecond)
 	}
-	return status, nil
+	return job, nil
 }
 
 func processRecords(ctx context.Context, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {
