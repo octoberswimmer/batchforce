@@ -24,10 +24,12 @@ maps.
 
 
 ```
-$ batchforce update Account "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%Test'" '{Id: record.Id, Name: record.Name + " Test"}'
+$ batchforce update Account --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%Test'" '{Id: record.Id, Name: record.Name + " Test"}'
 ```
 
 This will query all Accounts whose Name doesn't end with "Test" and append "Test" to the Name.
+
+See [docs/batchforce.md](docs/batchforce.md) for all supported commands.
 
 CLI Help
 ========
@@ -50,6 +52,8 @@ $ batchforce help
         - stripHtml: removes HTML tags
         - escapeHtml: escapes characters using HTML entities like Apex's
           String.escapeHtml4 method
+        - escapeUnicode: escapes characters using Unicode escape sequences
+          like Apex's String.escapeUnicode method
         - base64: base-64 encodes input
         - compareAndSet: check if key maps to value; if key doesn't exist, set it to
           value
