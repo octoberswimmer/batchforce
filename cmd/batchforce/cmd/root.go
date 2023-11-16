@@ -42,7 +42,7 @@ func init() {
 	RootCmd.AddCommand(versionCmd)
 
 	RootCmd.PersistentFlags().StringP("account", "a", "", "account `username` to use")
-	RootCmd.PersistentFlags().Bool("quiet", false, "supress informational log messages")
+	RootCmd.PersistentFlags().Bool("quiet", false, "suppress informational log messages")
 }
 
 var RootCmd = &cobra.Command{
