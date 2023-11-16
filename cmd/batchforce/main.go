@@ -44,6 +44,7 @@ func init() {
 	RootCmd.AddCommand(versionCmd)
 
 	RootCmd.PersistentFlags().StringP("account", "a", "", "account `username` to use")
+	RootCmd.PersistentFlags().Bool("quiet", false, "supress informational log messages")
 }
 
 func main() {
@@ -267,6 +268,9 @@ var RootCmd = &cobra.Command{
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		initializeSession(cmd)
+		if quiet, _ := cmd.Flags().GetBool("quiet"); quiet {
+			log.SetLevel(log.WarnLevel)
+		}
 	},
 	DisableFlagsInUseLine: true,
 }
@@ -282,7 +286,7 @@ func cancelUponSignal(cancel context.CancelFunc) {
 			if interuptsReceived > 0 {
 				os.Exit(1)
 			}
-			log.Println("signal received.  cancelling.")
+			log.Warnln("signal received.  cancelling.")
 			cancel()
 			interuptsReceived++
 		}
