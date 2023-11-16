@@ -13,7 +13,7 @@ require (
 	github.com/recursionpharma/go-csv-map v0.0.0-20160524001940-792523c65ae9
 	github.com/sirupsen/logrus v1.9.3
 	github.com/smacker/go-tree-sitter v0.0.0-20230223055714-4d4cba2a4780
-	github.com/spf13/cobra v1.7.0
+	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4
 )
 
@@ -21,6 +21,7 @@ require (
 	github.com/ForceCLI/config v0.0.0-20230217143549-9149d42a3c99 // indirect
 	github.com/ForceCLI/inflect v0.0.0-20130829110746-cc00b5ad7a6a // indirect
 	github.com/ViViDboarder/gotifier v0.0.0-20140619195515-0f19f3d7c54c // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
@@ -29,6 +30,7 @@ require (
 	github.com/onsi/gomega v1.23.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/sys v0.13.0 // indirect
