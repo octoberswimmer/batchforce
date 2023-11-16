@@ -229,7 +229,7 @@ func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord
 		if err != nil {
 			return fmt.Errorf("Failed to serialize batch: %w", err)
 		}
-		log.Infof("Adding batch of %d records to job %s\n", len(batch), job.Id)
+		log.Infof("Adding batch of %d records to job %s", len(batch), job.Id)
 		_, err = e.Session.AddBatchToJob(string(updates), job)
 		if err != nil {
 			return fmt.Errorf("Failed to enqueue batch: %w", err)
@@ -262,7 +262,7 @@ RECORDS:
 				if err != nil {
 					return job, err
 				}
-				log.Infof("Created job %s\n", job.Id)
+				log.Infof("Created job %s", job.Id)
 			}
 			batch = append(batch, record)
 			if len(batch) == e.BatchSize {
