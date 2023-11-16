@@ -33,7 +33,7 @@ $ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name 
 
 ```
   -a, --account username   account username to use
-      --quiet              supress informational log messages
+      --quiet              suppress informational log messages
 ```
 
 ### SEE ALSO

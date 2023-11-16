@@ -24,7 +24,7 @@ batchforce version [flags]
 
 ```
   -a, --account username   account username to use
-      --quiet              supress informational log messages
+      --quiet              suppress informational log messages
 ```
 
 ### SEE ALSO

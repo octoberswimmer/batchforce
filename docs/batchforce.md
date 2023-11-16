@@ -50,7 +50,7 @@ batchforce
 ```
   -a, --account username   account username to use
   -h, --help               help for batchforce
-      --quiet              supress informational log messages
+      --quiet              suppress informational log messages
 ```
 
 ### SEE ALSO

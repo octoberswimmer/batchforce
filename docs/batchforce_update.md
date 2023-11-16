@@ -34,7 +34,7 @@ $ batchforce update --query "SELECT Id, Type__c FROM Account WHERE RecordType.De
 
 ```
   -a, --account username   account username to use
-      --quiet              supress informational log messages
+      --quiet              suppress informational log messages
 ```
 
 ### SEE ALSO
