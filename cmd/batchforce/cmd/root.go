@@ -68,8 +68,10 @@ var RootCmd = &cobra.Command{
 	  like Apex's String.escapeUnicode method
 	- base64: base-64 encodes input
 	- compareAndSet: check if key maps to value; if key doesn't exist, set it to
-	  value
-	- incr: increments the number stored at key by one. set to 0 if not set.
+	  value (return true unless key already exists with different value)
+	- changeValue: update value associated with key (returns true unless the key
+	  already exists and the value is unchanged)
+	- incr: increments the number stored at key by one. set to 1 if not set.
 
 	The + and - operators can be used to add, update, or remove fields on the
 	record object.  For example:
