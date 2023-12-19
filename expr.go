@@ -75,7 +75,7 @@ func exprFunctions() []expr.Option {
 		new(func(string) string),
 	))
 
-	store := make(map[string]any)
+	compareAndSetStore := make(map[string]any)
 	// compareAndSet takes a key and value
 	// returns true if the key exists in the store and the stored value matches the passed value
 	// returns true if the key does not exist in the store, and stores the value under the key
@@ -85,14 +85,33 @@ func exprFunctions() []expr.Option {
 		func(params ...any) (any, error) {
 			key := params[0].(string)
 			value := params[1]
-			if store[key] == value {
+			if compareAndSetStore[key] == value {
 				return true, nil
-			} else if _, ok := store[key]; !ok {
-				store[key] = value
+			} else if _, ok := compareAndSetStore[key]; !ok {
+				compareAndSetStore[key] = value
 				return true, nil
 			} else {
 				return false, nil
 			}
+		},
+		new(func(string, any) bool),
+	))
+
+	changeValueStore := make(map[string]any)
+	// changeValue takes a key and value
+	// returns true if the key exists did not already exist
+	// returns true if the key already exists in the store, and the new value is different that the previous value
+	// returns false if the key exists in the store and the stored value is the same as passed value
+	exprFunctions = append(exprFunctions, expr.Function(
+		"changeValue",
+		func(params ...any) (any, error) {
+			key := params[0].(string)
+			value := params[1]
+			if changeValueStore[key] == value {
+				return false, nil
+			}
+			changeValueStore[key] = value
+			return true, nil
 		},
 		new(func(string, any) bool),
 	))
