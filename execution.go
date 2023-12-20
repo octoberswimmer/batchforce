@@ -300,6 +300,9 @@ RECORDS:
 			return job, fmt.Errorf("Failed to get bulk job status: %w", err)
 		}
 		force.DisplayJobInfo(job, os.Stderr)
+		if job.State == "Aborted" || job.State == "Failed" {
+			return job, fmt.Errorf("Bulk Job %s", job.State)
+		}
 		if job.NumberBatchesCompleted+job.NumberBatchesFailed == job.NumberBatchesTotal {
 			break
 		}
