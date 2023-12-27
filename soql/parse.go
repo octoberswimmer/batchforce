@@ -1,101 +1,80 @@
 package soql
 
 import (
-	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
-	"github.com/octoberswimmer/go-tree-sitter-sfapex/soql"
-	log "github.com/sirupsen/logrus"
-	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/antlr4-go/antlr/v4"
+	"github.com/octoberswimmer/apexfmt/parser"
 )
 
+type errorListener struct {
+	*antlr.DefaultErrorListener
+	errors []string
+}
+
+func (e *errorListener) SyntaxError(_ antlr.Recognizer, _ interface{}, line, column int, msg string, _ antlr.RecognitionException) {
+	e.errors = append(e.errors, fmt.Sprintln("line "+strconv.Itoa(line)+":"+strconv.Itoa(column)+" "+msg))
+}
+
+type relationshipListener struct {
+	*parser.BaseApexParserListener
+	relationships map[string]bool
+}
+
+func newRelationshipListener() *relationshipListener {
+	return &relationshipListener{
+		relationships: make(map[string]bool),
+	}
+}
+
+func (l *relationshipListener) EnterSubQuery(ctx *parser.SubQueryContext) {
+	for _, v := range ctx.FromNameList().AllFieldNameAlias() {
+		relName := ""
+		if alias := v.SoqlId(); alias != nil {
+			relName = alias.GetText()
+		} else {
+			relName = v.FieldName().GetText()
+		}
+		l.relationships[strings.ToLower(relName)] = true
+	}
+}
+
 func Validate(query []byte) error {
-	n, err := sitter.ParseCtx(context.Background(), query, soql.GetLanguage())
-	if err != nil {
-		return err
+	input := antlr.NewInputStream(string(query))
+	lexer := parser.NewApexLexer(input)
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+
+	p := parser.NewApexParser(stream)
+	p.RemoveErrorListeners()
+	e := &errorListener{}
+	p.AddErrorListener(e)
+
+	l := newRelationshipListener()
+	antlr.ParseTreeWalkerDefault.Walk(l, p.Query())
+	if len(e.errors) > 0 {
+		return errors.New(strings.Join(e.errors, "\n"))
 	}
-	if !n.HasError() {
-		return nil
-	}
-	soqlError, err := getError(n, query)
-	if err != nil {
-		return fmt.Errorf("SOQL error: %w", err)
-	}
-	return fmt.Errorf("failed to parse soql: %s", soqlError)
+	return nil
 }
 
 // Get the Names of Relationships in Sub-Queries
 func SubQueryRelationships(query string) (map[string]bool, error) {
-	allRelationships := make(map[string]bool)
-	q := []byte(query)
-	err := Validate(q)
-	if err != nil {
-		return allRelationships, err
-	}
-	n, err := sitter.ParseCtx(context.Background(), q, soql.GetLanguage())
-	if err != nil {
-		return allRelationships, err
-	}
-	relationshipName := `
-(select_clause
-	(subquery
-		(soql_query_body
-			(from_clause
-				(storage_identifier (identifier) @name)
-		)
-	 )
-  )
-)
-`
-	rels := make(map[string]bool)
-	varQuery, err := sitter.NewQuery([]byte(relationshipName), soql.GetLanguage())
-	if err != nil {
-		return allRelationships, err
-	}
-	defer varQuery.Close()
-	qc := sitter.NewQueryCursor()
-	defer qc.Close()
-	qc.Exec(varQuery, n)
-	var lastNode *sitter.Node
-	for {
-		match, ok := qc.NextMatch()
-		if !ok {
-			break
-		}
-		for _, c := range match.Captures {
-			lastNode = c.Node
-			rels[lastNode.Content(q)] = true
-		}
-	}
+	input := antlr.NewInputStream(string(query))
+	lexer := parser.NewApexLexer(input)
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
 
-	for k := range rels {
-		allRelationships[strings.ToLower(k)] = true
-	}
+	p := parser.NewApexParser(stream)
+	p.RemoveErrorListeners()
+	e := &errorListener{}
+	p.AddErrorListener(e)
 
-	return allRelationships, nil
-}
-
-func getError(node *sitter.Node, query []byte) (string, error) {
-	e := `(ERROR) @node`
-	errorQuery, err := sitter.NewQuery([]byte(e), soql.GetLanguage())
-	if err != nil {
-		log.Warnln("bad query for ERROR node", err.Error())
-		return "", err
+	l := newRelationshipListener()
+	antlr.ParseTreeWalkerDefault.Walk(l, p.Query())
+	if len(e.errors) > 0 {
+		return nil, errors.New(strings.Join(e.errors, "\n"))
 	}
-	defer errorQuery.Close()
-	qc := sitter.NewQueryCursor()
-	defer qc.Close()
-	qc.Exec(errorQuery, node)
-	for {
-		match, ok := qc.NextMatch()
-		if !ok {
-			break
-		}
-		for _, c := range match.Captures {
-			v := c.Node.Content(query)
-			return "Error at " + v, nil
-		}
-	}
-	return "", fmt.Errorf("unknown error")
+	return l.relationships, nil
 }
