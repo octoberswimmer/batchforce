@@ -1,13 +1,13 @@
 package apex
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"os"
+	"strconv"
 	"strings"
 
-	sfapex "github.com/octoberswimmer/go-tree-sitter-sfapex/apex"
-	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/antlr4-go/antlr/v4"
+	"github.com/octoberswimmer/apexfmt/parser"
 )
 
 // Validate that the apex parses successfully
@@ -16,22 +16,47 @@ func ValidateAnonymous(code []byte) error {
 	return Validate(apex)
 }
 
-func Validate(code []byte) error {
-	n, err := sitter.ParseCtx(context.Background(), code, sfapex.GetLanguage())
-	if err != nil {
-		return err
-	}
-	if !n.HasError() {
-		return nil
-	}
-	apexError, err := getError(n, code)
-	if err != nil {
-		return fmt.Errorf("Apex error: %w", err)
-	}
-	return fmt.Errorf("failed to parse apex: %s", apexError)
+type errorListener struct {
+	*antlr.DefaultErrorListener
+	errors []string
 }
 
-// Wrap anonymous apex in class and method because tree-sitter-sfapex doesn't
+func (e *errorListener) SyntaxError(_ antlr.Recognizer, _ interface{}, line, column int, msg string, _ antlr.RecognitionException) {
+	e.errors = append(e.errors, fmt.Sprintln("line "+strconv.Itoa(line)+":"+strconv.Itoa(column)+" "+msg))
+}
+
+type varListener struct {
+	*parser.BaseApexParserListener
+	vars []string
+}
+
+func (l *varListener) EnterLocalVariableDeclarationStatement(ctx *parser.LocalVariableDeclarationStatementContext) {
+	fmt.Println("Entering local variable declaration statement:", ctx.GetText())
+	for _, v := range ctx.LocalVariableDeclaration().VariableDeclarators().AllVariableDeclarator() {
+		varName := v.Id().GetText()
+		l.vars = append(l.vars, varName)
+	}
+}
+
+func Validate(code []byte) error {
+	input := antlr.NewInputStream(string(code))
+	lexer := parser.NewApexLexer(input)
+	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
+
+	p := parser.NewApexParser(stream)
+	p.RemoveErrorListeners()
+	e := &errorListener{}
+	p.AddErrorListener(e)
+
+	l := new(varListener)
+	antlr.ParseTreeWalkerDefault.Walk(l, p.CompilationUnit())
+	if len(e.errors) > 0 {
+		return errors.New(strings.Join(e.errors, "\n"))
+	}
+	return nil
+}
+
+// Wrap anonymous apex in class and method because apexfmt doesn't
 // support anonymous apex yet
 func wrap(anon string) []byte {
 	wrapped := []byte(fmt.Sprintf(`public class Temp {
@@ -40,106 +65,4 @@ func wrap(anon string) []byte {
 		}
 	}`, anon))
 	return wrapped
-}
-
-func getError(node *sitter.Node, apex []byte) (string, error) {
-	e := `(ERROR) @node`
-	errorQuery, err := sitter.NewQuery([]byte(e), sfapex.GetLanguage())
-	if err != nil {
-		return "", err
-	}
-	defer errorQuery.Close()
-	qc := sitter.NewQueryCursor()
-	defer qc.Close()
-	qc.Exec(errorQuery, node)
-	for {
-		match, ok := qc.NextMatch()
-		if !ok {
-			break
-		}
-		for _, c := range match.Captures {
-			v := c.Node.Content(apex)
-			return v, nil
-		}
-	}
-	// If no error, find MISSING Node, then parent expression_statement Node
-	if missing := findMissing(node, apex); missing != "" {
-		return missing, nil
-	}
-	return "", fmt.Errorf("unknown error")
-}
-
-func printNodes(n *sitter.Node, code []byte) {
-	tree := sitter.NewTreeCursor(n)
-	defer tree.Close()
-
-	rootNode := tree.CurrentNode()
-Tree:
-	for {
-		switch tree.CurrentNode().Type() {
-		case "(", ")", "{", "}", ";", ".", ",", "+", "<", ">":
-		default:
-			fmt.Fprintf(os.Stderr, "TYPE: %s\nFIELD NAME: %s\nNODE: %s\nCONTENT: %s\n\n", tree.CurrentNode().Type(), tree.CurrentFieldName(), tree.CurrentNode().String(), tree.CurrentNode().Content([]byte(code)))
-		}
-		ok := tree.GoToFirstChild()
-		if !ok {
-			ok := tree.GoToNextSibling()
-			if !ok {
-			Sibling:
-				for {
-					tree.GoToParent()
-					if tree.CurrentNode() == rootNode {
-						break Tree
-					}
-					if tree.GoToNextSibling() {
-						break Sibling
-					}
-				}
-			}
-		}
-	}
-}
-
-// Find MISSING node by walking tree since querying for missing nodes isn't
-// supported yet.  See https://github.com/tree-sitter/tree-sitter/issues/606
-func findMissing(n *sitter.Node, code []byte) string {
-	tree := sitter.NewTreeCursor(n)
-	defer tree.Close()
-
-	rootNode := tree.CurrentNode()
-	missing := ""
-Tree:
-	for {
-		if strings.HasPrefix(tree.CurrentNode().String(), "(MISSING") {
-			missing = tree.CurrentNode().String()
-			break Tree
-		}
-		ok := tree.GoToFirstChild()
-		if !ok {
-			ok := tree.GoToNextSibling()
-			if !ok {
-			Sibling:
-				for {
-					tree.GoToParent()
-					if tree.CurrentNode() == rootNode {
-						break Tree
-					}
-					if tree.GoToNextSibling() {
-						break Sibling
-					}
-				}
-			}
-		}
-	}
-	for {
-		if tree.CurrentNode().Type() == "expression_statement" {
-			missing = fmt.Sprintf("%s in %s", missing, tree.CurrentNode().Content(code))
-			break
-		}
-		if tree.CurrentNode() == rootNode {
-			break
-		}
-		tree.GoToParent()
-	}
-	return missing
 }
