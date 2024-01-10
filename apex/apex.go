@@ -31,7 +31,6 @@ type varListener struct {
 }
 
 func (l *varListener) EnterLocalVariableDeclarationStatement(ctx *parser.LocalVariableDeclarationStatementContext) {
-	fmt.Println("Entering local variable declaration statement:", ctx.GetText())
 	for _, v := range ctx.LocalVariableDeclaration().VariableDeclarators().AllVariableDeclarator() {
 		varName := v.Id().GetText()
 		l.vars = append(l.vars, varName)
