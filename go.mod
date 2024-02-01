@@ -7,9 +7,9 @@ toolchain go1.21.5
 require (
 	github.com/ForceCLI/force v1.0.5-0.20231103221530-d1124e632f70
 	github.com/antlr4-go/antlr/v4 v4.13.0
-	github.com/antonmedv/expr v1.15.3
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
+	github.com/expr-lang/expr v1.16.0
 	github.com/grokify/html-strip-tags-go v0.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/octoberswimmer/apexfmt v0.0.0-20231227154000-947cf367deb7
