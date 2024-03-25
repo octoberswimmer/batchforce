@@ -242,7 +242,7 @@ RECORDS:
 	for {
 		select {
 		case <-ctx.Done():
-			log.Warn("Context cancelled. Not sending more records to bulk job.")
+			log.Warn("Context canceled. Not sending more records to bulk job.")
 			break RECORDS
 		case record, ok := <-records:
 			if !ok {
@@ -253,7 +253,7 @@ RECORDS:
 				if err != nil {
 					log.Warnf("Invalid update: %s", err.Error())
 				} else {
-					fmt.Println(string(j))
+					log.Info(string(j))
 				}
 				continue
 			}
@@ -300,6 +300,8 @@ RECORDS:
 			return job, fmt.Errorf("Failed to get bulk job status: %w", err)
 		}
 		force.DisplayJobInfo(job, os.Stderr)
+		log.Info(fmt.Sprintf("Records Processed: %d | Records Failed: %d", job.NumberRecordsProcessed, job.NumberRecordsFailed))
+		log.Info(fmt.Sprintf("Batches In Progress: %d | Batches Complete: %d/%d", job.NumberBatchesInProgress, job.NumberBatchesCompleted, job.NumberBatchesTotal))
 		if job.State == "Aborted" || job.State == "Failed" {
 			return job, fmt.Errorf("Bulk Job %s", job.State)
 		}
@@ -338,7 +340,7 @@ INPUT:
 				}
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("Processing cancelled: %w", ctx.Err())
+			return fmt.Errorf("Processing canceled: %w", ctx.Err())
 		case <-time.After(1 * time.Second):
 			log.Info("Waiting for record to convert")
 		}

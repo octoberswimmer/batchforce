@@ -5,7 +5,7 @@ go 1.21.4
 toolchain go1.21.5
 
 require (
-	github.com/ForceCLI/force v1.0.5-0.20231103221530-d1124e632f70
+	github.com/ForceCLI/force v1.0.5-0.20240214162012-1d63a1439c6a
 	github.com/antlr4-go/antlr/v4 v4.13.0
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
@@ -26,7 +26,8 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/onsi/gomega v1.23.0 // indirect
@@ -36,7 +37,7 @@ require (
 	github.com/smartystreets/goconvey v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/exp v0.0.0-20231226003508-02704c960a9b // indirect
-	golang.org/x/sys v0.15.0 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	golang.org/x/net v0.22.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

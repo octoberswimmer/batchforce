@@ -37,7 +37,7 @@ func recordsFromCsv(ctx context.Context, fileName string, processor chan<- force
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("Cancelled: %w", ctx.Err())
+			return fmt.Errorf("Canceled: %w", ctx.Err())
 		default:
 			processor <- r
 		}
