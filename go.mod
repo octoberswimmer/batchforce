@@ -41,3 +41,6 @@ require (
 	golang.org/x/sys v0.18.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// Can be removed after https://github.com/expr-lang/expr/pull/633 is resolved
+replace github.com/expr-lang/expr v1.16.0 => github.com/cwarden/expr v0.0.0-20240423160201-50d02973b2f2
