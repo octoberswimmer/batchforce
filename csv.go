@@ -4,20 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"time"
 
 	force "github.com/ForceCLI/force/lib"
 	csvmap "github.com/recursionpharma/go-csv-map"
+	log "github.com/sirupsen/logrus"
 )
 
-func recordsFromCsv(ctx context.Context, fileName string, processor chan<- force.ForceRecord) error {
+func RecordsFromCsv(ctx context.Context, input io.Reader, processor chan<- force.ForceRecord) error {
 	defer close(processor)
 
-	f, err := os.Open(fileName)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	r := csvmap.NewReader(f)
+	var err error
+	r := csvmap.NewReader(input)
 	r.Columns, err = r.ReadHeader()
 	if err != nil {
 		return fmt.Errorf("failed to read csv header: %w", err)
@@ -35,11 +33,19 @@ func recordsFromCsv(ctx context.Context, fileName string, processor chan<- force
 		for k, v := range row {
 			r[k] = any(v)
 		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("Canceled: %w", ctx.Err())
-		default:
-			processor <- r
+	RECORD:
+		for {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("Canceled: %w", ctx.Err())
+			case processor <- r:
+				// For WASM, allow event loop to continue
+				// See https://github.com/golang/go/issues/39620#issuecomment-645513088
+				time.Sleep(1 * time.Nanosecond)
+				break RECORD
+			case <-time.After(1 * time.Second):
+				log.Info("Waiting to send record to converter")
+			}
 		}
 	}
 

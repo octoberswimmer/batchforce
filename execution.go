@@ -149,7 +149,13 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 			log.Errorf("Query failed: %s", err)
 		}
 	case e.CsvFile != "":
-		err = recordsFromCsv(ctx, e.CsvFile, queried)
+		f, err := os.Open(e.CsvFile)
+		if err != nil {
+			cancel()
+			log.Errorf("failed to open file: %s", err)
+		}
+		defer f.Close()
+		err = RecordsFromCsv(ctx, f, queried)
 		if err != nil {
 			cancel()
 			log.Errorf("Failed to read file: %s", err)
