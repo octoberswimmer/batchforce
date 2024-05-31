@@ -9,7 +9,7 @@ require (
 	github.com/antlr4-go/antlr/v4 v4.13.0
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
-	github.com/expr-lang/expr v1.16.6-0.20240424120849-e6dfb719a733
+	github.com/expr-lang/expr v1.16.9
 	github.com/grokify/html-strip-tags-go v0.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/octoberswimmer/apexfmt v0.0.0-20231227154000-947cf367deb7

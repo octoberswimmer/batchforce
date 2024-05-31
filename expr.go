@@ -139,6 +139,36 @@ func exprFunctions() []expr.Option {
 		new(func(string, any) bool),
 	))
 
+	getSetStore := make(map[string]any)
+	// getSet takes a key and value
+	// sets the current key to the new value
+	// returns the previous value for the key
+	exprFunctions = append(exprFunctions, expr.Function(
+		"getSet",
+		func(params ...any) (any, error) {
+			key := params[0].(string)
+			value := params[1]
+			prevValue, ok := getSetStore[key]
+			getSetStore[key] = value
+			if ok {
+				return prevValue, nil
+			}
+			switch v := value.(type) {
+			case int:
+				return int(0), nil
+			case float64:
+				return float64(0), nil
+			case string:
+				return "", nil
+			default:
+				return prevValue, fmt.Errorf("Unsupported type %T", v)
+			}
+		},
+		new(func(string, int) int),
+		new(func(string, float64) float64),
+		new(func(string, string) string),
+	))
+
 	counters := make(map[string]int64)
 	// incr increments the number stored at key by one.  If the key does not
 	// exist, it is set to 1.
