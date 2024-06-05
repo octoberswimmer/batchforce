@@ -52,29 +52,6 @@ func exprFunctions() []expr.Option {
 	))
 
 	exprFunctions = append(exprFunctions, expr.Function(
-		"concat",
-		func(params ...any) (any, error) {
-			var result []string
-			for _, p := range params {
-				switch v := p.(type) {
-				case []string:
-					result = append(result, v...)
-				case []any:
-					for _, s := range v {
-						result = append(result, s.(string))
-					}
-				default:
-					return result, fmt.Errorf("Unsupported type %T", v)
-				}
-			}
-			return result, nil
-		},
-		new(func([]string, []string) []string),
-		new(func([]any, []string) []string),
-		new(func([]string, []any) []string),
-	))
-
-	exprFunctions = append(exprFunctions, expr.Function(
 		"stripHtml",
 		func(params ...any) (any, error) {
 			return strip.StripTags(params[0].(string)), nil

@@ -55,8 +55,6 @@ $ batchforce help
         - escapeUnicode: escapes characters using Unicode escape sequences
           like Apex's String.escapeUnicode method
         - base64: base-64 encodes input
-        - concat: concatenate arrays of strings; useful with split/join for
-          multi-select picklists
         - getSet: set key to value, returning previous value for key
         - compareAndSet: check if key maps to value; if key doesn't exist, set it to
           value (return true unless key already exists with different value)
