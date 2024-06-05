@@ -135,6 +135,10 @@ func exprFunctions() []expr.Option {
 				return int(0), nil
 			case float64:
 				return float64(0), nil
+			case []string:
+				return []string{}, nil
+			case []any:
+				return []any{}, nil
 			case string:
 				return "", nil
 			default:
@@ -144,6 +148,8 @@ func exprFunctions() []expr.Option {
 		new(func(string, int) int),
 		new(func(string, float64) float64),
 		new(func(string, string) string),
+		new(func(string, []string) []string),
+		new(func(string, []any) []any),
 	))
 
 	counters := make(map[string]int64)
