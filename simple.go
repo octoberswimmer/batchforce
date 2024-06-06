@@ -5,7 +5,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func Run(sobject string, query string, converter Converter, jobOptions ...JobOption) force.JobInfo {
+func Run(sobject string, query string, converter Converter, jobOptions ...JobOption) Result {
 	e := NewExecution(sobject, query)
 
 	session, err := force.ActiveForce()

@@ -18,13 +18,17 @@ import (
 )
 
 type Execution struct {
-	Session    *force.Force
+	Session *force.Force
+
 	JobOptions []JobOption
 	Object     string
-	Apex       string
+
+	Apex string
 
 	Expr      string
 	Converter Converter
+
+	RecordWriter RecordWriter
 
 	Query        string
 	QueryAll     bool
@@ -35,9 +39,17 @@ type Execution struct {
 	BatchSize int
 }
 
+type Result interface {
+	NumberBatchesFailed() int
+	NumberRecordsFailed() int
+}
+
 // Arbitrary function that can send ForceRecord's.
 // A RecordSender should close the records channel when it's done writing.
 type RecordSender func(ctx context.Context, records chan<- force.ForceRecord) error
+
+// A RecordWriter can send write records somewhere other than a Salesforce Bulk API job
+type RecordWriter func(ctx context.Context, records <-chan force.ForceRecord) (Result, error)
 
 type Batch []force.ForceRecord
 type Converter func(force.ForceRecord) []force.ForceRecord
@@ -80,37 +92,37 @@ func NewRecordSenderExecution(object string, sender RecordSender) (*Execution, e
 	}, nil
 }
 
-func (e *Execution) Execute() (force.JobInfo, error) {
+func (e *Execution) Execute() (Result, error) {
 	return e.ExecuteContext(context.Background())
 }
 
-func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
+func (e *Execution) ExecuteContext(ctx context.Context) (Result, error) {
 	var apexContext any
 	var err error
-	type BulkJobResult struct {
-		force.JobInfo
+	type ResultWithError struct {
+		Result
 		err error
 	}
-	var result BulkJobResult
+	var result ResultWithError
 	if e.Apex != "" {
 		apexContext, err = e.getApexContext()
 		if err != nil {
-			return result.JobInfo, fmt.Errorf("Unable to get apex context: %w", err)
+			return result, fmt.Errorf("Unable to get apex context: %w", err)
 		}
 	}
 	if e.Expr != "" {
 		e.Converter, err = exprConverter(e.Expr, apexContext)
 		if err != nil {
-			return result.JobInfo, fmt.Errorf("Expr error: %w", err)
+			return result, fmt.Errorf("Expr error: %w", err)
 		}
 	} else if e.Converter == nil {
-		return result.JobInfo, fmt.Errorf("Expr or Converter must be defined")
+		return result, fmt.Errorf("Expr or Converter must be defined")
 	}
 	converter := e.Converter
 	if e.Query != "" {
 		converter, err = makeFlatteningConverter(e.Query, converter)
 		if err != nil {
-			return result.JobInfo, fmt.Errorf("Unable to get make converter: %w", err)
+			return result, fmt.Errorf("Unable to get make converter: %w", err)
 		}
 	}
 
@@ -128,7 +140,7 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
-	jobResult := make(chan BulkJobResult)
+	outputResult := make(chan ResultWithError)
 	// Start converter that takes input data, converts it to zero or more output
 	// records and sends them to the bulk job
 	go func() {
@@ -143,9 +155,9 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 		result, err := e.update(bulkContext, updates)
 		// Everything should be done
 		abortAll()
-		jobResult <- BulkJobResult{
-			JobInfo: result,
-			err:     err,
+		outputResult <- ResultWithError{
+			Result: result,
+			err:    err,
 		}
 	}()
 	switch {
@@ -180,10 +192,10 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 			log.Errorf("RecordSender failed: %s", err)
 		}
 	default:
-		return result.JobInfo, fmt.Errorf("No input defined")
+		return result, fmt.Errorf("No input defined")
 	}
-	result = <-jobResult
-	return result.JobInfo, result.err
+	result = <-outputResult
+	return result.Result, result.err
 }
 
 func (e *Execution) JobResults(job *force.JobInfo) (force.BatchResult, error) {
@@ -203,7 +215,7 @@ func (e *Execution) JobResults(job *force.JobInfo) (force.BatchResult, error) {
 	return results, nil
 }
 
-func (e *Execution) RunContext(ctx context.Context) force.JobInfo {
+func (e *Execution) RunContext(ctx context.Context) Result {
 	job, err := e.ExecuteContext(ctx)
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -211,12 +223,12 @@ func (e *Execution) RunContext(ctx context.Context) force.JobInfo {
 	return job
 }
 
-func (e *Execution) RunContextE(ctx context.Context) (force.JobInfo, error) {
+func (e *Execution) RunContextE(ctx context.Context) (Result, error) {
 	job, err := e.ExecuteContext(ctx)
 	return job, err
 }
 
-func (e *Execution) Run() force.JobInfo {
+func (e *Execution) Run() Result {
 	return e.RunContext(context.Background())
 }
 
@@ -237,7 +249,26 @@ func (e *Execution) startJob() (force.JobInfo, error) {
 	return jobInfo, nil
 }
 
-func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord) (force.JobInfo, error) {
+func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord) (Result, error) {
+	if e.RecordWriter == nil {
+		return e.updateSalesforce(ctx, records)
+	}
+	return e.RecordWriter(ctx, records)
+}
+
+type BulkJobResult struct {
+	force.JobInfo
+}
+
+func (b BulkJobResult) NumberBatchesFailed() int {
+	return b.JobInfo.NumberBatchesFailed
+}
+
+func (b BulkJobResult) NumberRecordsFailed() int {
+	return b.JobInfo.NumberRecordsFailed
+}
+
+func (e *Execution) updateSalesforce(ctx context.Context, records <-chan force.ForceRecord) (Result, error) {
 	defer func() {
 		for range records {
 			// drain records
@@ -288,7 +319,7 @@ RECORDS:
 			if job.Id == "" {
 				job, err = e.startJob()
 				if err != nil {
-					return job, err
+					return BulkJobResult{JobInfo: job}, err
 				}
 				log.Infof("Created job %s", job.Id)
 			}
@@ -312,34 +343,34 @@ RECORDS:
 	}
 	if job.Id == "" {
 		log.Info("Bulk job not started")
-		return job, nil
+		return BulkJobResult{JobInfo: job}, err
 	}
 	log.Info("Closing bulk job")
 	job, err = e.Session.CloseBulkJobWithContext(ctx, job.Id)
 	if err != nil {
-		return job, fmt.Errorf("Failed to close bulk job: %w", err)
+		return BulkJobResult{JobInfo: job}, fmt.Errorf("Failed to close bulk job: %w", err)
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			return job, fmt.Errorf("Cancelling wait for bulk job completion: %w", ctx.Err())
+			return BulkJobResult{JobInfo: job}, fmt.Errorf("Cancelling wait for bulk job completion: %w", ctx.Err())
 		default:
 		}
 		job, err = e.Session.GetJobInfo(job.Id)
 		if err != nil {
-			return job, fmt.Errorf("Failed to get bulk job status: %w", err)
+			return BulkJobResult{JobInfo: job}, fmt.Errorf("Failed to get bulk job status: %w", err)
 		}
 		log.Info(fmt.Sprintf("Records Processed: %d | Records Failed: %d", job.NumberRecordsProcessed, job.NumberRecordsFailed))
 		log.Info(fmt.Sprintf("Batches In Progress: %d | Batches Complete: %d/%d", job.NumberBatchesInProgress, job.NumberBatchesCompleted, job.NumberBatchesTotal))
 		if job.State == "Aborted" || job.State == "Failed" {
-			return job, fmt.Errorf("Bulk Job %s", job.State)
+			return BulkJobResult{JobInfo: job}, fmt.Errorf("Bulk Job %s", job.State)
 		}
 		if job.NumberBatchesCompleted+job.NumberBatchesFailed == job.NumberBatchesTotal {
 			break
 		}
 		time.Sleep(2000 * time.Millisecond)
 	}
-	return job, nil
+	return BulkJobResult{JobInfo: job}, nil
 }
 
 func processRecords(ctx context.Context, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {

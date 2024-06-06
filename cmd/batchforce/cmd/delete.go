@@ -32,12 +32,12 @@ $ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name 
 			execution.JobOptions = append(execution.JobOptions, Delete)
 		}
 		errors := execution.RunContext(cmd.Context())
-		if errors.NumberBatchesFailed > 0 {
-			fmt.Println(errors.NumberBatchesFailed, "batch failures")
+		if errors.NumberBatchesFailed() > 0 {
+			fmt.Println(errors.NumberBatchesFailed(), "batch failures")
 			os.Exit(1)
 		}
-		if errors.NumberRecordsFailed > 0 {
-			fmt.Println(errors.NumberRecordsFailed, "record failures")
+		if errors.NumberRecordsFailed() > 0 {
+			fmt.Println(errors.NumberRecordsFailed(), "record failures")
 			os.Exit(1)
 		}
 		return nil
