@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	force "github.com/ForceCLI/force/lib"
+	"github.com/ForceCLI/force/lib/query"
 	"github.com/octoberswimmer/batchforce/soql"
 )
 
@@ -33,11 +34,10 @@ func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) (
 			continue
 		}
 		if _, found := subQueryRelationships[strings.ToLower(k)]; found {
-			subQuery := v.(map[string]interface{})
-			records := subQuery["records"].([]interface{})
-			done := subQuery["done"].(bool)
-			if !done {
-				return nil, fmt.Errorf("got possible incomplete results for " + k + " subquery. done is false, but all results should have been retrieved")
+			subQueryResults := v.([]query.Record)
+			records := make([]force.ForceRecord, 0, len(subQueryResults))
+			for _, s := range subQueryResults {
+				records = append(records, s.Fields)
 			}
 			r[k] = records
 		}

@@ -5,7 +5,7 @@ go 1.21.4
 toolchain go1.21.5
 
 require (
-	github.com/ForceCLI/force v1.0.5-0.20240214162012-1d63a1439c6a
+	github.com/ForceCLI/force v1.0.6-0.20240808222159-22a7a46218ce
 	github.com/antlr4-go/antlr/v4 v4.13.0
 	github.com/benhoyt/goawk v1.21.0
 	github.com/clbanning/mxj v1.8.4
