@@ -26,9 +26,6 @@ func makeFlatteningConverter(query string, converter Converter) (Converter, erro
 
 // Replace subquery results with the records for the sub-query
 func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) (force.ForceRecord, error) {
-	if len(subQueryRelationships) == 0 {
-		return r, nil
-	}
 	for k, v := range r {
 		if v == nil {
 			continue
@@ -40,6 +37,9 @@ func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) (
 				records = append(records, s.Fields)
 			}
 			r[k] = records
+		} else if m, ok := v.(map[string]any); ok {
+			delete(m, "attributes")
+			r[k] = m
 		}
 	}
 	return r, nil
