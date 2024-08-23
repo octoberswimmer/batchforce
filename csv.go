@@ -51,3 +51,7 @@ func RecordsFromCsv(ctx context.Context, input io.Reader, processor chan<- force
 
 	return nil
 }
+
+func CSV(j *force.JobInfo) {
+	j.ContentType = "CSV"
+}
