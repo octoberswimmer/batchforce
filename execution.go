@@ -307,7 +307,6 @@ RECORDS:
 		if err != nil {
 			return job, fmt.Errorf("Failed to get bulk job status: %w", err)
 		}
-		force.DisplayJobInfo(job, os.Stderr)
 		log.Info(fmt.Sprintf("Records Processed: %d | Records Failed: %d", job.NumberRecordsProcessed, job.NumberRecordsFailed))
 		log.Info(fmt.Sprintf("Batches In Progress: %d | Batches Complete: %d/%d", job.NumberBatchesInProgress, job.NumberBatchesCompleted, job.NumberBatchesTotal))
 		if job.State == "Aborted" || job.State == "Failed" {
