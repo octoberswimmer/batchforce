@@ -3,9 +3,11 @@ package batch
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -383,8 +385,48 @@ func (batch Batch) marshallForBulkJob(job force.JobInfo) (updates []byte, err er
 		}
 		xmlData.Write([]byte(`</sObjects>`))
 		updates = xmlData.Bytes()
+	case "CSV":
+		return batchToCsv(batch)
 	default:
 		err = fmt.Errorf("Unsupported ContentType: " + job.ContentType)
 	}
 	return
+}
+
+func batchToCsv(batch Batch) ([]byte, error) {
+	csvData := new(bytes.Buffer)
+	if len(batch) == 0 {
+		return csvData.Bytes(), nil
+	}
+	csvWriter := csv.NewWriter(csvData)
+	header := make([]string, 0, len(batch[0]))
+	for key := range batch[0] {
+		header = append(header, key)
+	}
+	err := csvWriter.Write(header)
+	if err != nil {
+		return csvData.Bytes(), err
+	}
+	for _, record := range batch {
+		row := make([]string, len(record))
+		for i, key := range header {
+			switch v := record[key].(type) {
+			case string:
+				row[i] = v
+			case int64:
+				row[i] = strconv.FormatInt(v, 10)
+			default:
+				panic(fmt.Sprintf("%+v is %T", v, v))
+			}
+		}
+		err := csvWriter.Write(row)
+		if err != nil {
+			return csvData.Bytes(), err
+		}
+	}
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		return csvData.Bytes(), err
+	}
+	return csvData.Bytes(), nil
 }
