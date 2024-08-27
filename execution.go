@@ -200,6 +200,11 @@ func (e *Execution) RunContext(ctx context.Context) force.JobInfo {
 	return job
 }
 
+func (e *Execution) RunContextE(ctx context.Context) (force.JobInfo, error) {
+	job, err := e.ExecuteContext(ctx)
+	return job, err
+}
+
 func (e *Execution) Run() force.JobInfo {
 	return e.RunContext(context.Background())
 }
