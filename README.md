@@ -20,6 +20,28 @@ Install from source:
 $ go install github.com/octoberswimmer/batchforce/cmd/batchforce@latest
 ```
 
+## Web Version
+
+There's also a web-based version at https://batchforce.octoberswimmer.com/,
+which uses Salesforce's APIs directly from your browser. (*After authenticating and approving the application, a [CorsWhitelistOrigin](https://developer.salesforce.com/docs/atlas.en-us.api_meta.meta/api_meta/meta_corswhitelistorigin.htm) component is automatically deployed to your org to allow the batchforce application running in your browser to access your org.*)
+
+## (Optional) Context
+
+The `--context` flag can be used to provide additional org-specific contextual
+data which can be referenced in the expression through an `apex` object.  It
+takes a string containing anonymous apex.  Any variables defined will be made
+available as keys within `apex`.
+
+For example, if you have a "Supplier" Account Record Type, you could get the
+Record Type's Id in a batchforce job to update the Record Type of Accounts from
+"Partner" to "Supplier".
+
+```
+$ batchforce update Account -q "SELECT Id FROM Account WHERE RecordType.DeveloperName = 'Partner'" \
+ '{Id: record.Id, RecordTypeId: apex.supplierId}' \
+ --context "Id supplierId = Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().get('Supplier').getRecordTypeId();"
+```
+
 ## Example Usage
 
 Each record is made available to [expr](https://github.com/antonmedv/expr/blob/master/docs/Language-Definition.md) as
@@ -28,12 +50,14 @@ maps.
 
 
 ```
-$ batchforce update Account --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%Test'" '{Id: record.Id, Name: record.Name + " Test"}'
+$ batchforce update Account --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%Test'" \
+  '{Id: record.Id, Name: record.Name + " Test"}'
 ```
 
 This will query all Accounts whose Name doesn't end with "Test" and append "Test" to the Name.
 
-See [docs/batchforce.md](docs/batchforce.md) for all supported commands.
+See [docs/batchforce.md](docs/batchforce.md) for all supported commands and the
+[wiki](https://github.com/octoberswimmer/batchforce/wiki) for more examples.
 
 ## CLI Help
 
