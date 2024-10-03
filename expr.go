@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"crypto/md5"
 	b64 "encoding/base64"
 	"fmt"
 	"html"
@@ -71,6 +72,14 @@ func exprFunctions() []expr.Option {
 		"escapeHtml",
 		func(params ...any) (any, error) {
 			return strings.ReplaceAll(html.EscapeString(params[0].(string)), `&#34;`, `&quot;`), nil
+		},
+		new(func(string) string),
+	))
+
+	exprFunctions = append(exprFunctions, expr.Function(
+		"md5",
+		func(params ...any) (any, error) {
+			return fmt.Sprintf("%x", md5.Sum([]byte(params[0].(string)))), nil
 		},
 		new(func(string) string),
 	))
