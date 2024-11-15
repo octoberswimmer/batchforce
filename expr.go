@@ -1,8 +1,10 @@
 package batch
 
 import (
+	"bytes"
 	"crypto/md5"
 	b64 "encoding/base64"
+	"encoding/gob"
 	"fmt"
 	"html"
 	"strings"
@@ -14,6 +16,10 @@ import (
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 )
+
+func init() {
+	gob.Register(force.ForceRecord{})
+}
 
 type Env map[string]any
 
@@ -104,6 +110,27 @@ func exprFunctions() []expr.Option {
 			}
 		},
 		new(func(string, any) bool),
+	))
+
+	exprFunctions = append(exprFunctions, expr.Function(
+		"clone",
+		func(params ...any) (any, error) {
+			source := params[0].(force.ForceRecord)
+			var buf bytes.Buffer
+			enc := gob.NewEncoder(&buf)
+			dec := gob.NewDecoder(&buf)
+			err := enc.Encode(source)
+			if err != nil {
+				return nil, err
+			}
+			var copy force.ForceRecord
+			err = dec.Decode(&copy)
+			if err != nil {
+				return nil, err
+			}
+			return copy, nil
+		},
+		new(func(force.ForceRecord) force.ForceRecord),
 	))
 
 	changeValueStore := make(map[string]any)
