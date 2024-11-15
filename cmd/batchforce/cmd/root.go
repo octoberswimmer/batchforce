@@ -74,10 +74,15 @@ var RootCmd = &cobra.Command{
 	- changeValue: update value associated with key (returns true unless the key
 	  already exists and the value is unchanged)
 	- incr: increments the number stored at key by one. set to 1 if not set.
+	- clone: create a copy of the record
 
 	The + and - operators can be used to add, update, or remove fields on the
 	record object.  For example:
 	record + {RecordTypeId: apex.myRecordTypeId} - "RecordType.Name"
+
+	If creating multiple records from a source record, use clone to avoid mutating
+	the same object repeatedly.  For example:
+	1..100 | map(clone(record) + {Name: "Record " + string(#)})
 
 	Additional context to be provided to the Expr expression by passing the
 	--context parameter containining anonymous apex to execute before the
