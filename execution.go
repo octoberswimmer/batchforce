@@ -285,6 +285,8 @@ RECORDS:
 					break RECORDS
 				}
 			}
+		case <-time.After(5 * time.Second):
+			log.Info("Waiting for record to add to batch")
 		}
 	}
 	if len(batch) > 0 {
