@@ -211,14 +211,14 @@ func exprFunctions() []expr.Option {
 	return exprFunctions
 }
 
-func exprConverter(expression string, context any) func(force.ForceRecord) []force.ForceRecord {
+func exprConverter(expression string, context any) (func(force.ForceRecord) []force.ForceRecord, error) {
 	env := Env{
 		"record": force.ForceRecord{},
 		"apex":   context,
 	}
 	program, err := expr.Compile(expression, append(exprFunctions(), expr.Env(env))...)
 	if err != nil {
-		log.Fatalln("Invalid expression:", err)
+		return nil, fmt.Errorf("Invalid expression: %w", err)
 	}
 	converter := func(record force.ForceRecord) []force.ForceRecord {
 		env := Env{
@@ -245,5 +245,5 @@ func exprConverter(expression string, context any) func(force.ForceRecord) []for
 		log.Warnln("Unexpected value.  It should be a map or array or maps.  Got", out)
 		return []force.ForceRecord{}
 	}
-	return converter
+	return converter, nil
 }

@@ -99,7 +99,10 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 		}
 	}
 	if e.Expr != "" {
-		e.Converter = exprConverter(e.Expr, apexContext)
+		e.Converter, err = exprConverter(e.Expr, apexContext)
+		if err != nil {
+			return result.JobInfo, fmt.Errorf("Expr error: %w", err)
+		}
 	} else if e.Converter == nil {
 		return result.JobInfo, fmt.Errorf("Expr or Converter must be defined")
 	}
