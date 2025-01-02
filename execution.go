@@ -116,8 +116,15 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 
 	session := e.session()
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	queryContext, abortQuery := context.WithCancel(ctx)
+	processorContext, abortProcessor := context.WithCancel(context.Background())
+	bulkContext, abortBulk := context.WithCancel(context.Background())
+	abortAll := func() {
+		abortQuery()
+		abortProcessor()
+		abortBulk()
+	}
+	defer abortAll()
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
@@ -125,16 +132,17 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 	// Start converter that takes input data, converts it to zero or more output
 	// records and sends them to the bulk job
 	go func() {
-		err = processRecords(ctx, queried, updates, converter)
+		err = processRecords(processorContext, queried, updates, converter)
 		if err != nil {
-			cancel()
+			abortAll()
 			log.Warn(err.Error())
 		}
 	}()
 	// Start job that sends records to the Bulk API
 	go func() {
-		result, err := e.update(ctx, updates)
-		cancel()
+		result, err := e.update(bulkContext, updates)
+		// Everything should be done
+		abortAll()
 		jobResult <- BulkJobResult{
 			JobInfo: result,
 			err:     err,
@@ -148,27 +156,27 @@ func (e *Execution) ExecuteContext(ctx context.Context) (force.JobInfo, error) {
 				options.QueryAll = true
 			})
 		}
-		err = session.CancelableQueryAndSend(ctx, e.Query, queried, queryOptions...)
+		err = session.CancelableQueryAndSend(queryContext, e.Query, queried, queryOptions...)
 		if err != nil {
-			cancel()
+			abortProcessor()
 			log.Errorf("Query failed: %s", err)
 		}
 	case e.CsvFile != "":
 		f, err := os.Open(e.CsvFile)
 		if err != nil {
-			cancel()
+			abortProcessor()
 			log.Errorf("failed to open file: %s", err)
 		}
 		defer f.Close()
 		err = RecordsFromCsv(ctx, f, queried)
 		if err != nil {
-			cancel()
+			abortProcessor()
 			log.Errorf("Failed to read file: %s", err)
 		}
 	case e.RecordSender != nil:
 		err = e.RecordSender(ctx, queried)
 		if err != nil {
-			cancel()
+			abortProcessor()
 			log.Errorf("RecordSender failed: %s", err)
 		}
 	default:
