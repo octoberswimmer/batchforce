@@ -253,9 +253,13 @@ func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord
 		batch = make(Batch, 0, e.BatchSize)
 		return nil
 	}
+	waitForRecord := 5 * time.Second
+	recordTimer := time.NewTimer(waitForRecord)
+	defer recordTimer.Stop()
 
 RECORDS:
 	for {
+		recordTimer.Reset(waitForRecord)
 		select {
 		case <-ctx.Done():
 			log.Warn("Context canceled. Not sending more records to bulk job.")
@@ -288,7 +292,7 @@ RECORDS:
 					break RECORDS
 				}
 			}
-		case <-time.After(5 * time.Second):
+		case <-recordTimer.C:
 			log.Info("Waiting for record to add to batch")
 		}
 	}
@@ -340,9 +344,13 @@ func processRecords(ctx context.Context, input <-chan force.ForceRecord, output 
 			err = fmt.Errorf("panic occurred: %s", r)
 		}
 	}()
+	waitForRecord := 1 * time.Second
+	recordTimer := time.NewTimer(waitForRecord)
+	defer recordTimer.Stop()
 
 INPUT:
 	for {
+		recordTimer.Reset(waitForRecord)
 		select {
 		case record, more := <-input:
 			if !more {
@@ -358,7 +366,7 @@ INPUT:
 			}
 		case <-ctx.Done():
 			return fmt.Errorf("Processing canceled: %w", ctx.Err())
-		case <-time.After(1 * time.Second):
+		case <-recordTimer.C:
 			log.Info("Waiting for record to convert")
 		}
 	}
