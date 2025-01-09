@@ -15,19 +15,27 @@ type errorListener struct {
 	errors []string
 }
 
+type Relationship string
+type Relationships map[Relationship]Relationships
+
 func (e *errorListener) SyntaxError(_ antlr.Recognizer, _ interface{}, line, column int, msg string, _ antlr.RecognitionException) {
 	e.errors = append(e.errors, fmt.Sprintln("line "+strconv.Itoa(line)+":"+strconv.Itoa(column)+" "+msg))
 }
 
 type relationshipListener struct {
 	*parser.BaseApexParserListener
-	relationships map[string]bool
+	relationships Relationships
+
+	currentRelationships  *Relationships
+	previousRelationships *Relationships
 }
 
 func newRelationshipListener() *relationshipListener {
-	return &relationshipListener{
-		relationships: make(map[string]bool),
+	l := &relationshipListener{
+		relationships: make(Relationships),
 	}
+	l.currentRelationships = &l.relationships
+	return l
 }
 
 func (l *relationshipListener) EnterSubQuery(ctx *parser.SubQueryContext) {
@@ -38,8 +46,15 @@ func (l *relationshipListener) EnterSubQuery(ctx *parser.SubQueryContext) {
 		} else {
 			relName = v.FieldName().GetText()
 		}
-		l.relationships[strings.ToLower(relName)] = true
+		rel := make(Relationships)
+		(*l.currentRelationships)[Relationship(strings.ToLower(relName))] = rel
+		l.previousRelationships = l.currentRelationships
+		l.currentRelationships = &rel
 	}
+}
+
+func (l *relationshipListener) ExitSubQuery(ctx *parser.SubQueryContext) {
+	l.currentRelationships = l.previousRelationships
 }
 
 func Validate(query []byte) error {
@@ -61,7 +76,7 @@ func Validate(query []byte) error {
 }
 
 // Get the Names of Relationships in Sub-Queries
-func SubQueryRelationships(query string) (map[string]bool, error) {
+func SubQueryRelationships(query string) (Relationships, error) {
 	input := antlr.NewInputStream(string(query))
 	lexer := parser.NewApexLexer(input)
 	stream := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)

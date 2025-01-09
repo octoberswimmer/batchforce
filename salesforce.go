@@ -15,26 +15,23 @@ func makeFlatteningConverter(query string, converter Converter) (Converter, erro
 		return nil, fmt.Errorf("Failed to parse query for subqueries: %w", err)
 	}
 	flatteningConverter := func(record force.ForceRecord) []force.ForceRecord {
-		flattened, err := flattenRecord(record, subQueryRelationships)
-		if err != nil {
-			panic("Could not flatten record: " + err.Error())
-		}
+		flattened := flattenRecord(record, subQueryRelationships)
 		return converter(flattened)
 	}
 	return flatteningConverter, nil
 }
 
 // Replace subquery results with the records for the sub-query
-func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) (force.ForceRecord, error) {
+func flattenRecord(r force.ForceRecord, subQueryRelationships soql.Relationships) force.ForceRecord {
 	for k, v := range r {
 		if v == nil {
 			continue
 		}
-		if _, found := subQueryRelationships[strings.ToLower(k)]; found {
+		if subRelationships, found := subQueryRelationships[soql.Relationship(strings.ToLower(k))]; found {
 			subQueryResults := v.([]query.Record)
 			records := make([]force.ForceRecord, 0, len(subQueryResults))
 			for _, s := range subQueryResults {
-				records = append(records, s.Fields)
+				records = append(records, flattenRecord(s.Fields, subRelationships))
 			}
 			r[k] = records
 		} else if m, ok := v.(map[string]any); ok {
@@ -42,5 +39,5 @@ func flattenRecord(r force.ForceRecord, subQueryRelationships map[string]bool) (
 			r[k] = m
 		}
 	}
-	return r, nil
+	return r
 }
