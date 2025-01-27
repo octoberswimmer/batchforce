@@ -281,7 +281,7 @@ RECORDS:
 				if err != nil {
 					log.Warnf("Invalid update: %s", err.Error())
 				} else {
-					log.Info(string(j))
+					fmt.Println(string(j))
 				}
 				continue
 			}
