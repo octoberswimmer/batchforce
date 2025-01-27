@@ -3,10 +3,12 @@ package batch
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/rand"
 	b64 "encoding/base64"
 	"encoding/gob"
 	"fmt"
 	"html"
+	"math/big"
 	"strings"
 	"unicode"
 
@@ -203,6 +205,19 @@ func exprFunctions() []expr.Option {
 			return counters[key], nil
 		},
 		new(func(string) int64),
+	))
+
+	exprFunctions = append(exprFunctions, expr.Function(
+		"rand",
+		func(params ...any) (any, error) {
+			max := params[0].(int64)
+			bigInt, err := rand.Int(rand.Reader, big.NewInt(max))
+			if err != nil {
+				return bigInt, err
+			}
+			return bigInt.Int64(), nil
+		},
+		new(func(int64) int64),
 	))
 
 	exprFunctions = append(exprFunctions, expr.Operator("+", "MergePatch"))

@@ -83,6 +83,7 @@ $ batchforce help
           like Apex's String.escapeUnicode method
         - base64: base-64 encodes input
         - md5: md5 hash of string
+        - rand(n): generate a random number between 0 and n
         - getSet: set key to value, returning previous value for key
         - compareAndSet: check if key maps to value; if key doesn't exist, set it to
           value (return true unless key already exists with different value)
