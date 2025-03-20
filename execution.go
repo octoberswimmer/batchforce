@@ -250,10 +250,13 @@ func (e *Execution) startJob() (force.JobInfo, error) {
 }
 
 func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord) (Result, error) {
-	if e.RecordWriter == nil {
-		return e.updateSalesforce(ctx, records)
+	if e.DryRun {
+		return e.dryRun(ctx, records)
 	}
-	return e.RecordWriter(ctx, records)
+	if e.RecordWriter != nil {
+		return e.RecordWriter(ctx, records)
+	}
+	return e.updateSalesforce(ctx, records)
 }
 
 type BulkJobResult struct {
@@ -266,6 +269,52 @@ func (b BulkJobResult) NumberBatchesFailed() int {
 
 func (b BulkJobResult) NumberRecordsFailed() int {
 	return b.JobInfo.NumberRecordsFailed
+}
+
+type dryRunResult struct {
+}
+
+func (b dryRunResult) NumberBatchesFailed() int {
+	return 0
+}
+
+func (b dryRunResult) NumberRecordsFailed() int {
+	return 0
+}
+
+func (e *Execution) dryRun(ctx context.Context, records <-chan force.ForceRecord) (Result, error) {
+	defer func() {
+		for range records {
+			// drain records
+		}
+	}()
+	waitForRecord := 5 * time.Second
+	recordTimer := time.NewTimer(waitForRecord)
+	defer recordTimer.Stop()
+
+RECORDS:
+	for {
+		recordTimer.Reset(waitForRecord)
+		select {
+		case <-ctx.Done():
+			log.Warn("Context canceled. Not sending more records to bulk job.")
+			break RECORDS
+		case record, ok := <-records:
+			if !ok {
+				break RECORDS
+			}
+			j, err := json.Marshal(record)
+			if err != nil {
+				log.Warnf("Invalid update: %s", err.Error())
+			} else {
+				fmt.Println(string(j))
+			}
+			continue
+		case <-recordTimer.C:
+			log.Info("Waiting for record to add to batch")
+		}
+	}
+	return dryRunResult{}, nil
 }
 
 func (e *Execution) updateSalesforce(ctx context.Context, records <-chan force.ForceRecord) (Result, error) {
@@ -306,15 +355,6 @@ RECORDS:
 		case record, ok := <-records:
 			if !ok {
 				break RECORDS
-			}
-			if e.DryRun {
-				j, err := json.Marshal(record)
-				if err != nil {
-					log.Warnf("Invalid update: %s", err.Error())
-				} else {
-					fmt.Println(string(j))
-				}
-				continue
 			}
 			if job.Id == "" {
 				job, err = e.startJob()

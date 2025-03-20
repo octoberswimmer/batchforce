@@ -14,20 +14,21 @@ import (
 var session *force.Force
 
 func init() {
-	for _, cmd := range []*cobra.Command{updateCmd, insertCmd, upsertCmd, deleteCmd} {
+	for _, cmd := range []*cobra.Command{updateCmd, insertCmd, upsertCmd, deleteCmd, publishCmd} {
 		cmd.Flags().StringP("query", "q", "", "SOQL query for input data")
 		cmd.Flags().String("query-all", "", "query all records (including archived/deleted records)")
 		cmd.Flags().StringP("file", "f", "", "CSV file for input data")
 
 		cmd.Flags().StringP("context", "c", "", "provide context with anonymous apex")
 
-		cmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
-		cmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
-
 		cmd.Flags().BoolP("dry-run", "n", false, "dry run.  Display updates without modifying records")
 		cmd.MarkFlagsMutuallyExclusive("query", "query-all")
 		cmd.MarkFlagsMutuallyExclusive("query", "file")
 		cmd.MarkFlagsMutuallyExclusive("file", "query-all")
+	}
+	for _, cmd := range []*cobra.Command{updateCmd, insertCmd, upsertCmd, deleteCmd} {
+		cmd.Flags().BoolP("serialize", "s", false, "serial mode.  Run batch job in Serial mode (default: Parallel)")
+		cmd.Flags().IntP("batch-size", "b", 0, "batch size.  Set batch size (default: 2000)")
 	}
 
 	upsertCmd.Flags().StringP("external-id", "e", "", "external id")
@@ -39,6 +40,7 @@ func init() {
 	RootCmd.AddCommand(insertCmd)
 	RootCmd.AddCommand(upsertCmd)
 	RootCmd.AddCommand(deleteCmd)
+	RootCmd.AddCommand(publishCmd)
 	RootCmd.AddCommand(versionCmd)
 
 	RootCmd.PersistentFlags().StringP("account", "a", "", "account `username` to use")
