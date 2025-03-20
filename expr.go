@@ -10,6 +10,7 @@ import (
 	"html"
 	"math/big"
 	"strings"
+	"time"
 	"unicode"
 
 	force "github.com/ForceCLI/force/lib"
@@ -218,6 +219,65 @@ func exprFunctions() []expr.Option {
 			return bigInt.Int64(), nil
 		},
 		new(func(int64) int64),
+	))
+
+	// Same as Expr's builtin date function, but with support for Salesforce's
+	// standard DateTime format.
+	exprFunctions = append(exprFunctions, expr.Function(
+		"date",
+		func(args ...any) (any, error) {
+			tz, ok := args[0].(*time.Location)
+			if ok {
+				args = args[1:]
+			}
+
+			date := args[0].(string)
+			if len(args) == 2 {
+				layout := args[1].(string)
+				if tz != nil {
+					return time.ParseInLocation(layout, date, tz)
+				}
+				return time.Parse(layout, date)
+			}
+			if len(args) == 3 {
+				layout := args[1].(string)
+				timeZone := args[2].(string)
+				tz, err := time.LoadLocation(timeZone)
+				if err != nil {
+					return nil, err
+				}
+				t, err := time.ParseInLocation(layout, date, tz)
+				if err != nil {
+					return nil, err
+				}
+				return t, nil
+			}
+
+			layouts := []string{
+				"2006-01-02T15:04:05-0700",
+				"2006-01-02",
+				"15:04:05",
+				"2006-01-02 15:04:05",
+				time.RFC3339,
+				time.RFC822,
+				time.RFC850,
+				time.RFC1123,
+			}
+			for _, layout := range layouts {
+				if tz == nil {
+					t, err := time.Parse(layout, date)
+					if err == nil {
+						return t, nil
+					}
+				} else {
+					t, err := time.ParseInLocation(layout, date, tz)
+					if err == nil {
+						return t, nil
+					}
+				}
+			}
+			return nil, fmt.Errorf("invalid date %s", date)
+		},
 	))
 
 	exprFunctions = append(exprFunctions, expr.Operator("+", "MergePatch"))

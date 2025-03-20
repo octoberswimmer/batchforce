@@ -92,6 +92,8 @@ $ batchforce help
         - incr: increments the number stored at key by one. set to 1 if not set.
         - clone: create a copy of the record
 
+        The date function supports the standard Salesforce DateTime format.
+
         The + and - operators can be used to add, update, or remove fields on the
         record object.  For example:
         record + {RecordTypeId: apex.myRecordTypeId} - "RecordType.Name"
