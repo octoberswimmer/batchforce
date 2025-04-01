@@ -15,6 +15,7 @@ import (
 	"github.com/clbanning/mxj"
 	"github.com/octoberswimmer/batchforce/soql"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 type Execution struct {
@@ -99,103 +100,90 @@ func (e *Execution) Execute() (Result, error) {
 func (e *Execution) ExecuteContext(ctx context.Context) (Result, error) {
 	var apexContext any
 	var err error
-	type ResultWithError struct {
-		Result
-		err error
-	}
-	var result ResultWithError
+
 	if e.Apex != "" {
 		apexContext, err = e.getApexContext()
 		if err != nil {
-			return result, fmt.Errorf("Unable to get apex context: %w", err)
+			return nil, fmt.Errorf("Unable to get apex context: %w", err)
 		}
 	}
 	if e.Expr != "" {
 		e.Converter, err = exprConverter(e.Expr, apexContext)
 		if err != nil {
-			return result, fmt.Errorf("Expr error: %w", err)
+			return nil, fmt.Errorf("Expr error: %w", err)
 		}
 	} else if e.Converter == nil {
-		return result, fmt.Errorf("Expr or Converter must be defined")
+		return nil, fmt.Errorf("Expr or Converter must be defined")
 	}
+
 	converter := e.Converter
 	if e.Query != "" {
 		converter, err = makeFlatteningConverter(e.Query, converter)
 		if err != nil {
-			return result, fmt.Errorf("Unable to get make converter: %w", err)
+			return nil, fmt.Errorf("Unable to get make converter: %w", err)
 		}
 	}
 
-	session := e.session()
-
-	queryContext, abortQuery := context.WithCancel(ctx)
-	processorContext, abortProcessor := context.WithCancel(context.Background())
-	bulkContext, abortBulk := context.WithCancel(context.Background())
-	abortAll := func() {
-		abortQuery()
-		abortProcessor()
-		abortBulk()
-	}
-	defer abortAll()
+	g, ctx := errgroup.WithContext(ctx)
+	resultChan := make(chan Result, 1) // Buffer size 1 so the sender doesn't block
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
-	outputResult := make(chan ResultWithError)
+	session := e.session()
 	// Start converter that takes input data, converts it to zero or more output
 	// records and sends them to the bulk job
-	go func() {
-		err = processRecords(processorContext, queried, updates, converter)
-		if err != nil {
-			abortAll()
-			log.Warn(err.Error())
-		}
-	}()
+	g.Go(func() error {
+		return processRecords(ctx, queried, updates, converter)
+	})
+
 	// Start job that sends records to the Bulk API
-	go func() {
-		result, err := e.update(bulkContext, updates)
-		// Everything should be done
-		abortAll()
-		outputResult <- ResultWithError{
-			Result: result,
-			err:    err,
-		}
-	}()
-	switch {
-	case e.Query != "":
-		var queryOptions []func(*force.QueryOptions)
-		if e.QueryAll {
-			queryOptions = append(queryOptions, func(options *force.QueryOptions) {
-				options.QueryAll = true
-			})
-		}
-		err = session.CancelableQueryAndSend(queryContext, e.Query, queried, queryOptions...)
+	g.Go(func() error {
+		res, err := e.update(ctx, updates)
 		if err != nil {
-			abortProcessor()
-			log.Errorf("Query failed: %s", err)
+			log.Errorf("update failed: %s", err)
 		}
-	case e.CsvFile != "":
-		f, err := os.Open(e.CsvFile)
-		if err != nil {
-			abortProcessor()
-			log.Errorf("failed to open file: %s", err)
+		select {
+		case resultChan <- res:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-		defer f.Close()
-		err = RecordsFromCsv(ctx, f, queried)
-		if err != nil {
-			abortProcessor()
-			log.Errorf("Failed to read file: %s", err)
+		return nil
+	})
+	// Get input
+	g.Go(func() error {
+		switch {
+		case e.Query != "":
+			var queryOptions []func(*force.QueryOptions)
+			if e.QueryAll {
+				queryOptions = append(queryOptions, func(options *force.QueryOptions) {
+					options.QueryAll = true
+				})
+			}
+			return session.CancelableQueryAndSend(ctx, e.Query, queried, queryOptions...)
+		case e.CsvFile != "":
+			f, err := os.Open(e.CsvFile)
+			if err != nil {
+				return fmt.Errorf("failed to open file: %s", err)
+			}
+			defer f.Close()
+			return RecordsFromCsv(ctx, f, queried)
+		case e.RecordSender != nil:
+			return e.RecordSender(ctx, queried)
+		default:
+			return fmt.Errorf("No input defined")
 		}
-	case e.RecordSender != nil:
-		err = e.RecordSender(ctx, queried)
-		if err != nil {
-			abortProcessor()
-			log.Errorf("RecordSender failed: %s", err)
-		}
-	default:
-		return result, fmt.Errorf("No input defined")
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
-	result = <-outputResult
-	return result.Result, result.err
+
+	select {
+	case res := <-resultChan:
+		return res, nil
+	default:
+		return nil, fmt.Errorf("no result returned")
+	}
 }
 
 func (e *Execution) JobResults(job *force.JobInfo) (force.BatchResult, error) {
