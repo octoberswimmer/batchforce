@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -36,8 +37,9 @@ type Execution struct {
 	CsvFile      string
 	RecordSender RecordSender
 
-	DryRun    bool
-	BatchSize int
+	DryRun        bool
+	PreviewWriter io.Writer
+	BatchSize     int
 }
 
 type Result interface {
@@ -276,6 +278,11 @@ func (e *Execution) dryRun(ctx context.Context, records <-chan force.ForceRecord
 			// drain records
 		}
 	}()
+	previewWriter := e.PreviewWriter
+	if previewWriter == nil {
+		previewWriter = newlineWriter{w: os.Stdout}
+	}
+
 	waitForRecord := 5 * time.Second
 	recordTimer := time.NewTimer(waitForRecord)
 	defer recordTimer.Stop()
@@ -295,7 +302,7 @@ RECORDS:
 			if err != nil {
 				log.Warnf("Invalid update: %s", err.Error())
 			} else {
-				fmt.Println(string(j))
+				fmt.Fprint(previewWriter, string(j))
 			}
 			continue
 		case <-recordTimer.C:
@@ -513,4 +520,17 @@ func batchToCsv(batch Batch) ([]byte, error) {
 		return csvData.Bytes(), err
 	}
 	return csvData.Bytes(), nil
+}
+
+type newlineWriter struct {
+	w io.Writer
+}
+
+func (nw newlineWriter) Write(p []byte) (int, error) {
+	n, err := nw.w.Write(p)
+	if err != nil {
+		return n, err
+	}
+	_, err = nw.w.Write([]byte("\n"))
+	return n, err
 }
