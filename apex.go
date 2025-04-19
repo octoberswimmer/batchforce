@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
-
+	force "github.com/ForceCLI/force/lib"
 	"github.com/benhoyt/goawk/interp"
 	anon "github.com/octoberswimmer/batchforce/apex"
+	"strings"
 )
 
 func (e *Execution) getApexContext() (map[string]any, error) {
@@ -23,8 +23,12 @@ func (e *Execution) getApexContext() (map[string]any, error) {
 	lines = append(lines, `System.debug(JSON.serialize(b_f_c_t_x));`)
 	apex = apex + strings.Join(lines, "\n")
 
-	session := e.session()
-	debugLog, err := session.Partner.ExecuteAnonymous(apex)
+	// retrieve underlying *force.Force for Partner API calls
+	fs, ok := e.session().(*force.Force)
+	if !ok {
+		return nil, fmt.Errorf("session is not a *force.Force")
+	}
+	debugLog, err := fs.Partner.ExecuteAnonymous(apex)
 	if err != nil {
 		return nil, err
 	}

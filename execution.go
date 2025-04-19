@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -19,8 +20,30 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// BulkSession defines the interface for a Salesforce Bulk API client used by Execution.
+// It is implemented by *force.Force from the ForceCLI library.
+// BulkSession defines the interface for a Salesforce Bulk API client used by Execution.
+// It is implemented by *force.Force from the ForceCLI library.
+type BulkSession interface {
+	// CancelableQueryAndSend runs a SOQL query and streams ForceRecords to the out channel.
+	CancelableQueryAndSend(ctx context.Context, soql string, out chan<- force.ForceRecord, opts ...func(*force.QueryOptions)) error
+	// CreateBulkJob creates a new bulk job with the given JobInfo.
+	CreateBulkJob(job force.JobInfo, requestOptions ...func(*http.Request)) (force.JobInfo, error)
+	// AddBatchToJob adds a batch of records to the bulk job.
+	AddBatchToJob(content string, job force.JobInfo) (force.BatchInfo, error)
+	// CloseBulkJobWithContext closes the bulk job and returns its final JobInfo.
+	CloseBulkJobWithContext(ctx context.Context, jobID string) (force.JobInfo, error)
+	// GetJobInfo retrieves the current state of the bulk job.
+	GetJobInfo(jobID string) (force.JobInfo, error)
+	// GetBatches returns the list of batch metadata for a bulk job.
+	GetBatches(jobID string) ([]force.BatchInfo, error)
+	// RetrieveBulkBatchResults fetches the results for a given batch.
+	RetrieveBulkBatchResults(jobID, batchID string) (force.BatchResult, error)
+}
+
+// Execution holds configuration for running a Bulk API job.
 type Execution struct {
-	Session *force.Force
+	Session BulkSession
 
 	JobOptions []JobOption
 	Object     string
@@ -144,11 +167,7 @@ func (e *Execution) ExecuteContext(ctx context.Context) (Result, error) {
 		if err != nil {
 			log.Errorf("update failed: %s", err)
 		}
-		select {
-		case resultChan <- res:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		resultChan <- res
 		return nil
 	})
 	// Get input
@@ -381,16 +400,11 @@ RECORDS:
 		return BulkJobResult{JobInfo: job}, err
 	}
 	log.Info("Closing bulk job")
-	job, err = e.Session.CloseBulkJobWithContext(ctx, job.Id)
+	job, err = e.Session.CloseBulkJobWithContext(context.Background(), job.Id)
 	if err != nil {
 		return BulkJobResult{JobInfo: job}, fmt.Errorf("Failed to close bulk job: %w", err)
 	}
 	for {
-		select {
-		case <-ctx.Done():
-			return BulkJobResult{JobInfo: job}, fmt.Errorf("Cancelling wait for bulk job completion: %w", ctx.Err())
-		default:
-		}
 		job, err = e.Session.GetJobInfo(job.Id)
 		if err != nil {
 			return BulkJobResult{JobInfo: job}, fmt.Errorf("Failed to get bulk job status: %w", err)
@@ -447,7 +461,8 @@ INPUT:
 	return nil
 }
 
-func (e *Execution) session() *force.Force {
+// session returns the active BulkSession, initializing it on first use.
+func (e *Execution) session() BulkSession {
 	if e.Session == nil {
 		session, err := force.ActiveForce()
 		if err != nil {

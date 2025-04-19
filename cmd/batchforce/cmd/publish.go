@@ -28,7 +28,12 @@ $ batchforce publish --file accounts.csv /event/Account_Change__e '{Id: record.I
 			return err
 		}
 		channel := args[0]
-		execution.RecordWriter = publishTo(execution.Session, channel)
+		// Session is BulkSession; assert to *force.Force for Pub/Sub client
+		fs, ok := execution.Session.(*force.Force)
+		if !ok {
+			return fmt.Errorf("cannot use session as *force.Force for publish")
+		}
+		execution.RecordWriter = publishTo(fs, channel)
 		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed() > 0 {
 			fmt.Println(errors.NumberBatchesFailed(), "batch failures")
