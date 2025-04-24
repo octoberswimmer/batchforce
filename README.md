@@ -44,7 +44,7 @@ $ batchforce update Account -q "SELECT Id FROM Account WHERE RecordType.Develope
 
 ## Example Usage
 
-Each record is made available to [expr](https://github.com/antonmedv/expr/blob/master/docs/Language-Definition.md) as
+Each record is made available to [expr](https://expr-lang.org/docs/language-definition) as
 `record`.  The expr expression should evaluate to a single map or an array of
 maps.
 
@@ -70,7 +70,7 @@ $ batchforce help
 
         The SOQL query is used to generate the input.  Each record returned by the
         query is made available to the Expr expression as a map named "record".  See
-        https://expr.medv.io/ for details on the Expr language.  The expression should
+        https://expr-lang.org/ for details on the Expr language.  The expression should
         evaluate to an map of the form, "{ Field: Value, ... }" or an array of such
         maps.
 

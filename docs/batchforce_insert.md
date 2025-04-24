@@ -32,6 +32,7 @@ $ batchforce insert --file accounts.csv Account '{Name: record.Name + " Copy"}'
 
 ```
   -a, --account username   account username to use
+      --help-expr          show expr language definition
       --quiet              suppress informational log messages
 ```
 

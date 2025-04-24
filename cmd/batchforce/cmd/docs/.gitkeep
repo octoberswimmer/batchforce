@@ -1,0 +1,1 @@
+language-definition.md should be generated in this directory with `go generate cmd/batchforce/cmd`

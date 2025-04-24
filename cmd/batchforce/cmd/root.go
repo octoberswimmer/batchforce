@@ -6,7 +6,11 @@ import (
 
 	. "github.com/octoberswimmer/batchforce"
 
+	"os/exec"
+	"strings"
+
 	force "github.com/ForceCLI/force/lib"
+	"github.com/charmbracelet/glamour"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -45,6 +49,7 @@ func init() {
 
 	RootCmd.PersistentFlags().StringP("account", "a", "", "account `username` to use")
 	RootCmd.PersistentFlags().Bool("quiet", false, "suppress informational log messages")
+	RootCmd.PersistentFlags().Bool("help-expr", false, "show expr language definition")
 }
 
 var RootCmd = &cobra.Command{
@@ -57,7 +62,7 @@ var RootCmd = &cobra.Command{
 
 	The SOQL query is used to generate the input.  Each record returned by the
 	query is made available to the Expr expression as a map named "record".  See
-	https://expr.medv.io/ for details on the Expr language.  The expression should
+	https://expr-lang.org/ for details on the Expr language.  The expression should
 	evaluate to an map of the form, "{ Field: Value, ... }" or an array of such
 	maps.
 
@@ -103,6 +108,30 @@ var RootCmd = &cobra.Command{
 		os.Exit(1)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if helpExpr, _ := cmd.Flags().GetBool("help-expr"); helpExpr {
+			// Render the embedded markdown to terminal-friendly ANSI output
+			rendered, err := glamour.Render(exprLangDef, "dark")
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error rendering markdown, falling back to raw:")
+				fmt.Fprint(os.Stdout, exprLangDef)
+				os.Exit(0)
+			}
+			// Pipe through pager (use $PAGER or fallback to less -R)
+			pager := os.Getenv("PAGER")
+			if pager == "" {
+				pager = "less -R"
+			}
+			parts := strings.Split(pager, " ")
+			cmdPager := exec.Command(parts[0], parts[1:]...)
+			cmdPager.Stdin = strings.NewReader(rendered)
+			cmdPager.Stdout = os.Stdout
+			cmdPager.Stderr = os.Stderr
+			if err := cmdPager.Run(); err != nil {
+				// If pager fails, fallback to direct output
+				fmt.Fprint(os.Stdout, rendered)
+			}
+			os.Exit(0)
+		}
 		initializeSession(cmd)
 		if quiet, _ := cmd.Flags().GetBool("quiet"); quiet {
 			log.SetLevel(log.WarnLevel)

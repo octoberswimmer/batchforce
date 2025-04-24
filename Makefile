@@ -6,12 +6,13 @@ WINDOWS=$(EXECUTABLE)-windows-amd64.exe
 LINUX=$(EXECUTABLE)-linux-amd64
 OSX_AMD64=$(EXECUTABLE)-darwin-amd64
 OSX_ARM64=$(EXECUTABLE)-darwin-arm64
+EMBEDDED=cmd/batchforce/cmd/docs/language-definition.md
 ALL=$(WINDOWS) $(LINUX) $(OSX_ARM64) $(OSX_AMD64)
 
-default:
+default: $(EMBEDDED)
 	go build -o ${EXECUTABLE} ${LDFLAGS} ${PACKAGE}
 
-install:
+install: $(EMBEDDED)
 	go install ${LDFLAGS} ${PACKAGE}
 
 #$(WINDOWS): checkcmd-x86_64-w64-mingw32-gcc checkcmd-x86_64-w64-mingw32-g++
@@ -25,10 +26,10 @@ install:
 #		CGO_CXXFLAGS=-D_WIN32_WINNT=0x0400 \
 #		go build -v -o $(WINDOWS) ${LDFLAGS} ${PACKAGE}
 
-$(WINDOWS): checkcmd-xgo
+$(WINDOWS): checkcmd-xgo $(EMBEDDED)
 	xgo -go 1.21 -out $(EXECUTABLE) -dest . ${LDFLAGS} -buildmode default -trimpath -targets windows/amd64 -pkg ${PACKAGE} -x .
 
-$(LINUX): checkcmd-x86_64-linux-gnu-gcc checkcmd-x86_64-linux-gnu-g++
+$(LINUX): checkcmd-x86_64-linux-gnu-gcc checkcmd-x86_64-linux-gnu-g++ $(EMBEDDED)
 	env \
 		GOOS=linux \
 		GOARCH=amd64 \
@@ -39,10 +40,10 @@ $(LINUX): checkcmd-x86_64-linux-gnu-gcc checkcmd-x86_64-linux-gnu-g++
 
 # Build macOS binaries using docker images that contain SDK
 # See https://github.com/crazy-max/xgo and https://github.com/tpoechtrager/osxcross
-$(OSX_ARM64): checkcmd-xgo
+$(OSX_ARM64): checkcmd-xgo $(EMBEDDED)
 	xgo -go 1.21 -out $(EXECUTABLE) -dest . ${LDFLAGS} -buildmode default -trimpath -targets darwin/arm64 -pkg ${PACKAGE} -x .
 
-$(OSX_AMD64): checkcmd-xgo
+$(OSX_AMD64): checkcmd-xgo $(EMBEDDED)
 	xgo -go 1.21 -out $(EXECUTABLE) -dest . ${LDFLAGS} -buildmode default -trimpath -targets darwin/amd64 -pkg ${PACKAGE} -x .
 
 $(basename $(WINDOWS)).zip: $(WINDOWS)
@@ -55,7 +56,11 @@ $(basename $(WINDOWS)).zip: $(WINDOWS)
 
 dist: test $(addsuffix .zip,$(basename $(ALL)))
 
-test:
+# Update embedded Expr language definition
+$(EMBEDDED):
+	go generate ./cmd/batchforce/cmd
+
+test: $(EMBEDDED)
 	test -z "$(go fmt)"
 	go vet
 	go test ./...

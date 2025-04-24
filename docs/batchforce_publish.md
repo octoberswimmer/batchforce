@@ -1,32 +1,29 @@
-## batchforce delete
+## batchforce publish
 
-delete Salesforce records using the Bulk API
+publish Platform Events using the Pub/Sub API
 
 ```
-batchforce delete [flags] <SObject> [Expr]
+batchforce publish [flags] /event/<Event> <Expr>
 ```
 
 ### Examples
 
 ```
 
-$ batchforce delete --query "SELECT Id FROM Account WHERE Name LIKE Account '%test'"
-$ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name matches "\d{3,5}" ? {Id: record.Id} : nil'
+$ batchforce publish --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '%test'" /event/Account_Change__e '{Account__c: record.Id, Name: record.Name + " Copy"}'
+$ batchforce publish --file accounts.csv /event/Account_Change__e '{Id: record.Id, Name: record.Name + " Copy"}'
 	
 ```
 
 ### Options
 
 ```
-  -b, --batch-size int     batch size.  Set batch size (default: 2000)
   -c, --context string     provide context with anonymous apex
   -n, --dry-run            dry run.  Display updates without modifying records
   -f, --file string        CSV file for input data
-      --hard-delete        hard delete records.  Bypass recycle bin and hard delete records
-  -h, --help               help for delete
+  -h, --help               help for publish
   -q, --query string       SOQL query for input data
       --query-all string   query all records (including archived/deleted records)
-  -s, --serialize          serial mode.  Run batch job in Serial mode (default: Parallel)
 ```
 
 ### Options inherited from parent commands

@@ -24,6 +24,7 @@ batchforce version [flags]
 
 ```
   -a, --account username   account username to use
+      --help-expr          show expr language definition
       --quiet              suppress informational log messages
 ```
 

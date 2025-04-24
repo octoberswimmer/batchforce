@@ -11,7 +11,7 @@ Use Bulk API to update Salesforce records
 
 	The SOQL query is used to generate the input.  Each record returned by the
 	query is made available to the Expr expression as a map named "record".  See
-	https://expr.medv.io/ for details on the Expr language.  The expression should
+	https://expr-lang.org/ for details on the Expr language.  The expression should
 	evaluate to an map of the form, "{ Field: Value, ... }" or an array of such
 	maps.
 
@@ -24,6 +24,7 @@ Use Bulk API to update Salesforce records
 	  like Apex's String.escapeUnicode method
 	- base64: base-64 encodes input
 	- md5: md5 hash of string
+	- rand(n): generate a random number between 0 and n
 	- getSet: set key to value, returning previous value for key
 	- compareAndSet: check if key maps to value; if key doesn't exist, set it to
 	  value (return true unless key already exists with different value)
@@ -31,6 +32,8 @@ Use Bulk API to update Salesforce records
 	  already exists and the value is unchanged)
 	- incr: increments the number stored at key by one. set to 1 if not set.
 	- clone: create a copy of the record
+
+	The date function supports the standard Salesforce DateTime format.
 
 	The + and - operators can be used to add, update, or remove fields on the
 	record object.  For example:
@@ -59,6 +62,7 @@ batchforce
 ```
   -a, --account username   account username to use
   -h, --help               help for batchforce
+      --help-expr          show expr language definition
       --quiet              suppress informational log messages
 ```
 
@@ -66,6 +70,7 @@ batchforce
 
 * [batchforce delete](batchforce_delete.md)	 - delete Salesforce records using the Bulk API
 * [batchforce insert](batchforce_insert.md)	 - insert Salesforce records using the Bulk API
+* [batchforce publish](batchforce_publish.md)	 - publish Platform Events using the Pub/Sub API
 * [batchforce update](batchforce_update.md)	 - Update Salesforce records using the Bulk API
 * [batchforce upsert](batchforce_upsert.md)	 - upsert Salesforce records using the Bulk API
 * [batchforce version](batchforce_version.md)	 - Display current version
