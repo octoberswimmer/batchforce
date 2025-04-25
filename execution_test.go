@@ -23,6 +23,57 @@ func newFakeSession() *fakeSession {
 	}
 }
 
+// TestExecuteContext_DoesNotCloseBeforeAllRecords ensures the bulk job isn't closed
+// until all records have been sent and processed.
+func TestExecuteContext_DoesNotCloseBeforeAllRecords(t *testing.T) {
+	fake := newFakeSession()
+	// recordSender sends two records, delaying the second
+	record2Sent := make(chan struct{})
+	sender := func(ctx context.Context, out chan<- force.ForceRecord) error {
+		out <- force.ForceRecord{"Id": "1"}
+		// simulate delay before sending second record
+		time.Sleep(100 * time.Millisecond)
+		out <- force.ForceRecord{"Id": "2"}
+		close(record2Sent)
+		close(out)
+		return nil
+	}
+	// identity converter
+	converter := func(r force.ForceRecord) []force.ForceRecord { return []force.ForceRecord{r} }
+	e := Execution{
+		Session:      fake,
+		RecordSender: sender,
+		Converter:    converter,
+		BatchSize:    1,
+	}
+	done := make(chan struct{})
+	// run ExecuteContext asynchronously
+	go func() {
+		e.ExecuteContext(context.Background())
+		close(done)
+	}()
+	// wait until the second record has been sent
+	select {
+	case <-record2Sent:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("second record was not sent in time")
+	}
+	// ensure CloseBulkJobWithContext not called yet
+	select {
+	case <-fake.closedInvoked:
+		t.Fatal("bulk job was closed before all records were sent")
+	default:
+	}
+	// now allow CloseBulkJobWithContext to proceed
+	close(fake.closeAllow)
+	// wait for execution to finish
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("ExecuteContext did not finish after close allowed")
+	}
+}
+
 func (f *fakeSession) CancelableQueryAndSend(ctx context.Context, soql string, out chan<- force.ForceRecord, opts ...func(*force.QueryOptions)) error {
 	// not used in RecordSender mode
 	panic("CancelableQueryAndSend should not be called")

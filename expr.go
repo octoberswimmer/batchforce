@@ -24,7 +24,10 @@ func init() {
 	gob.Register(force.ForceRecord{})
 }
 
-type Env map[string]any
+type Env struct {
+	Record      force.ForceRecord `expr:"record"`
+	ApexContext any               `expr:"apex"`
+}
 
 func (Env) MergePatch(a force.ForceRecord, b map[string]any) force.ForceRecord {
 	for k, v := range b {
@@ -287,18 +290,14 @@ func exprFunctions() []expr.Option {
 }
 
 func exprConverter(expression string, context any) (func(force.ForceRecord) []force.ForceRecord, error) {
-	env := Env{
-		"record": force.ForceRecord{},
-		"apex":   context,
-	}
-	program, err := expr.Compile(expression, append(exprFunctions(), expr.Env(env))...)
+	program, err := expr.Compile(expression, append(exprFunctions(), expr.Env(Env{}))...)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid expression: %w", err)
 	}
 	converter := func(record force.ForceRecord) []force.ForceRecord {
 		env := Env{
-			"record": record,
-			"apex":   context,
+			Record:      record,
+			ApexContext: context,
 		}
 		out, err := expr.Run(program, env)
 		if err != nil {

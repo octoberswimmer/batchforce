@@ -5,12 +5,12 @@ go 1.23.0
 toolchain go1.24.2
 
 require (
-	github.com/ForceCLI/force v1.0.9-0.20250320192035-38bd143c5d06
+	github.com/ForceCLI/force v1.0.9-0.20250425210532-7c00c04404ea
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/benhoyt/goawk v1.21.0
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/clbanning/mxj v1.8.4
-	github.com/expr-lang/expr v1.16.9
+	github.com/expr-lang/expr v1.17.2
 	github.com/grokify/html-strip-tags-go v0.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/octoberswimmer/apexfmt v0.0.0-20250107235655-a1abbc5b8345

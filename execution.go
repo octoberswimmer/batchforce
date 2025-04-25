@@ -149,16 +149,19 @@ func (e *Execution) ExecuteContext(ctx context.Context) (Result, error) {
 		}
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
+	// derive a cancelable context so we can abort upstream on errors or panics
+	baseCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// create errgroup bound to the cancelable context
+	g, ctx := errgroup.WithContext(baseCtx)
 	resultChan := make(chan Result, 1) // Buffer size 1 so the sender doesn't block
 
 	queried := make(chan force.ForceRecord)
 	updates := make(chan force.ForceRecord)
 	session := e.session()
-	// Start converter that takes input data, converts it to zero or more output
-	// records and sends them to the bulk job
+	// Start converter: processes queried records, produces update records
 	g.Go(func() error {
-		return processRecords(ctx, queried, updates, converter)
+		return processRecords(ctx, queried, updates, converter, cancel)
 	})
 
 	// Start job that sends records to the Bulk API
@@ -422,16 +425,29 @@ RECORDS:
 	return BulkJobResult{JobInfo: job}, nil
 }
 
-func processRecords(ctx context.Context, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter) (err error) {
+func processRecords(ctx context.Context, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter, cancel func()) (err error) {
 	defer func() {
-		close(output)
-		for range input {
-			// drain records
-		}
+		// recover panic and trigger cancellation
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic occurred: %s", r)
+			cancel()
+		}
+		// signal updater no more conversions
+		close(output)
+		// drain input until either upstream is canceled or input closes
+	DrainLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				break DrainLoop
+			case _, more := <-input:
+				if !more {
+					break DrainLoop
+				}
+			}
 		}
 	}()
+
 	waitForRecord := 1 * time.Second
 	recordTimer := time.NewTimer(waitForRecord)
 	defer recordTimer.Stop()
