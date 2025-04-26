@@ -34,12 +34,16 @@ func TestExecuteContext_DoesNotCloseBeforeAllRecords(t *testing.T) {
 		// simulate delay before sending second record
 		time.Sleep(100 * time.Millisecond)
 		out <- force.ForceRecord{"Id": "2"}
-		close(record2Sent)
 		close(out)
 		return nil
 	}
-	// identity converter
-	converter := func(r force.ForceRecord) []force.ForceRecord { return []force.ForceRecord{r} }
+	// converter signals when second record is processed
+	converter := func(r force.ForceRecord) []force.ForceRecord {
+		if id, ok := r["Id"].(string); ok && id == "2" {
+			close(record2Sent)
+		}
+		return []force.ForceRecord{r}
+	}
 	e := Execution{
 		Session:      fake,
 		RecordSender: sender,
