@@ -149,7 +149,7 @@ func initializeSession(cmd *cobra.Command) {
 		session, err = force.ActiveForce()
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not initialize session: "+err.Error())
+		fmt.Fprintf(os.Stderr, "Could not initialize session: %s", err.Error())
 		os.Exit(1)
 	}
 }

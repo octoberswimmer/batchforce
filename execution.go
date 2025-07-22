@@ -510,7 +510,7 @@ func (batch Batch) marshallForBulkJob(job force.JobInfo) (updates []byte, err er
 	case "CSV":
 		return batchToCsv(batch)
 	default:
-		err = fmt.Errorf("Unsupported ContentType: " + job.ContentType)
+		err = fmt.Errorf("Unsupported ContentType: %s", job.ContentType)
 	}
 	return
 }

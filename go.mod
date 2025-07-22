@@ -1,16 +1,16 @@
 module github.com/octoberswimmer/batchforce
 
-go 1.23.0
+go 1.24
 
-toolchain go1.24.2
+toolchain go1.24.4
 
 require (
-	github.com/ForceCLI/force v1.0.9-0.20250425210532-7c00c04404ea
+	github.com/ForceCLI/force v1.1.0
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/benhoyt/goawk v1.21.0
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/clbanning/mxj v1.8.4
-	github.com/expr-lang/expr v1.17.2
+	github.com/expr-lang/expr v1.17.5
 	github.com/grokify/html-strip-tags-go v0.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/octoberswimmer/apexfmt v0.0.0-20250107235655-a1abbc5b8345
@@ -18,7 +18,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/sync v0.13.0
+	golang.org/x/sync v0.16.0
 )
 
 require (
@@ -37,8 +37,8 @@ require (
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/dlclark/regexp2 v1.11.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.3 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
@@ -66,12 +66,12 @@ require (
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
-	golang.org/x/term v0.31.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
-	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
-	google.golang.org/grpc v1.39.0-dev // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/term v0.33.0 // indirect
+	golang.org/x/text v0.27.0 // indirect
+	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
+	google.golang.org/grpc v1.56.3 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
