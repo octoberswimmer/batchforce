@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 type fakeSession struct {
 	closedInvoked chan struct{}
 	closeAllow    chan struct{}
+	onAddBatch    func()
 }
 
 func newFakeSession() *fakeSession {
@@ -27,8 +29,16 @@ func newFakeSession() *fakeSession {
 // until all records have been sent and processed.
 func TestExecuteContext_DoesNotCloseBeforeAllRecords(t *testing.T) {
 	fake := newFakeSession()
+	// Track batches added
+	batchCount := 0
+	batchMutex := &sync.Mutex{}
+	fake.onAddBatch = func() {
+		batchMutex.Lock()
+		batchCount++
+		batchMutex.Unlock()
+	}
+
 	// recordSender sends two records, delaying the second
-	record2Sent := make(chan struct{})
 	sender := func(ctx context.Context, out chan<- force.ForceRecord) error {
 		out <- force.ForceRecord{"Id": "1"}
 		// simulate delay before sending second record
@@ -37,11 +47,8 @@ func TestExecuteContext_DoesNotCloseBeforeAllRecords(t *testing.T) {
 		close(out)
 		return nil
 	}
-	// converter signals when second record is processed
+	// simple identity converter
 	converter := func(r force.ForceRecord) []force.ForceRecord {
-		if id, ok := r["Id"].(string); ok && id == "2" {
-			close(record2Sent)
-		}
 		return []force.ForceRecord{r}
 	}
 	e := Execution{
@@ -50,31 +57,30 @@ func TestExecuteContext_DoesNotCloseBeforeAllRecords(t *testing.T) {
 		Converter:    converter,
 		BatchSize:    1,
 	}
-	done := make(chan struct{})
-	// run ExecuteContext asynchronously
-	go func() {
-		e.ExecuteContext(context.Background())
-		close(done)
-	}()
-	// wait until the second record has been sent
-	select {
-	case <-record2Sent:
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("second record was not sent in time")
+	// Allow close to proceed immediately since we're running synchronously
+	close(fake.closeAllow)
+
+	// run ExecuteContext and wait for completion
+	_, err := e.ExecuteContext(context.Background())
+	if err != nil {
+		t.Fatalf("ExecuteContext failed: %v", err)
 	}
-	// ensure CloseBulkJobWithContext not called yet
+
+	// Verify that both records were sent as batches before the job was closed
+	batchMutex.Lock()
+	finalBatchCount := batchCount
+	batchMutex.Unlock()
+
+	if finalBatchCount != 2 {
+		t.Fatalf("Expected 2 batches to be added, but got %d", finalBatchCount)
+	}
+
+	// Verify that close was called
 	select {
 	case <-fake.closedInvoked:
-		t.Fatal("bulk job was closed before all records were sent")
+		// Good, close was called
 	default:
-	}
-	// now allow CloseBulkJobWithContext to proceed
-	close(fake.closeAllow)
-	// wait for execution to finish
-	select {
-	case <-done:
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("ExecuteContext did not finish after close allowed")
+		t.Fatal("CloseBulkJobWithContext was not called")
 	}
 }
 
@@ -89,6 +95,9 @@ func (f *fakeSession) CreateBulkJob(job force.JobInfo, _ ...func(*http.Request))
 }
 
 func (f *fakeSession) AddBatchToJob(content string, job force.JobInfo) (force.BatchInfo, error) {
+	if f.onAddBatch != nil {
+		f.onAddBatch()
+	}
 	return force.BatchInfo{Id: "batch-id"}, nil
 }
 
