@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -222,6 +223,19 @@ func exprFunctions() []expr.Option {
 			return bigInt.Int64(), nil
 		},
 		new(func(int64) int64),
+	))
+
+	exprFunctions = append(exprFunctions, expr.Function(
+		"readfile",
+		func(params ...any) (any, error) {
+			path := params[0].(string)
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return "", err
+			}
+			return string(content), nil
+		},
+		new(func(string) string),
 	))
 
 	// Same as Expr's builtin date function, but with support for Salesforce's

@@ -91,6 +91,7 @@ $ batchforce help
           already exists and the value is unchanged)
         - incr: increments the number stored at key by one. set to 1 if not set.
         - clone: create a copy of the record
+        - readfile: reads a file from the filesystem and returns its content as a string
 
         The date function supports the standard Salesforce DateTime format.
 
