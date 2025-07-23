@@ -1,15 +1,12 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	force "github.com/ForceCLI/force/lib"
-	"github.com/ForceCLI/force/lib/pubsub"
 	. "github.com/octoberswimmer/batchforce"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +18,7 @@ $ batchforce publish --query "SELECT Id, Name FROM Account WHERE NOT Name LIKE '
 $ batchforce publish --file accounts.csv /event/Account_Change__e '{Id: record.Id, Name: record.Name + " Copy"}'
 	`,
 	DisableFlagsInUseLine: false,
-	Args:                  cobra.ExactValidArgs(2),
+	Args:                  cobra.MatchAll(cobra.ExactArgs(2), cobra.OnlyValidArgs),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		execution, err := getExecution(cmd, args)
 		if err != nil {
@@ -33,7 +30,7 @@ $ batchforce publish --file accounts.csv /event/Account_Change__e '{Id: record.I
 		if !ok {
 			return fmt.Errorf("cannot use session as *force.Force for publish")
 		}
-		execution.RecordWriter = publishTo(fs, channel)
+		execution.RecordWriter = PublishTo(fs, channel)
 		errors := execution.RunContext(cmd.Context())
 		if errors.NumberBatchesFailed() > 0 {
 			fmt.Println(errors.NumberBatchesFailed(), "batch failures")
@@ -45,24 +42,4 @@ $ batchforce publish --file accounts.csv /event/Account_Change__e '{Id: record.I
 		}
 		return nil
 	},
-}
-
-type uncheckableResult struct {
-}
-
-func (u uncheckableResult) NumberBatchesFailed() int {
-	return 0
-}
-
-func (u uncheckableResult) NumberRecordsFailed() int {
-	return 0
-}
-
-func publishTo(session *force.Force, channel string) RecordWriter {
-	return func(ctx context.Context, records <-chan force.ForceRecord) (Result, error) {
-		force.Log = log.StandardLogger()
-		res := uncheckableResult{}
-		err := pubsub.PublishMessagesWithContext(ctx, session, channel, records)
-		return res, err
-	}
 }
