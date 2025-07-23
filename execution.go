@@ -303,6 +303,8 @@ func (e *Execution) dryRun(ctx context.Context, records <-chan force.ForceRecord
 	previewWriter := e.PreviewWriter
 	if previewWriter == nil {
 		previewWriter = newlineWriter{w: os.Stdout}
+	} else {
+		previewWriter = newlineWriter{w: previewWriter}
 	}
 
 	waitForRecord := 5 * time.Second
