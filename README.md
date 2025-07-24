@@ -56,6 +56,17 @@ $ batchforce update Account --query "SELECT Id, Name FROM Account WHERE NOT Name
 
 This will query all Accounts whose Name doesn't end with "Test" and append "Test" to the Name.
 
+### Using the fetch function
+
+The `fetch` function allows you to retrieve content from Salesforce URLs. This is particularly useful for accessing file content:
+
+```
+$ batchforce update ContentVersion --query "SELECT Id, VersionData FROM ContentVersion WHERE Id = '068xx0000000001'" \
+  '{Id: record.Id, Description: "Base64: " + base64(fetch(record.VersionData))}'
+```
+
+This example fetches the binary content from a ContentVersion's VersionData field and encodes it as base64.
+
 See [docs/batchforce.md](docs/batchforce.md) for all supported commands and the
 [wiki](https://github.com/octoberswimmer/batchforce/wiki) for more examples.
 
@@ -92,6 +103,7 @@ $ batchforce help
         - incr: increments the number stored at key by one. set to 1 if not set.
         - clone: create a copy of the record
         - readfile: reads a file from the filesystem and returns its content as a string
+        - fetch: retrieves content from a Salesforce URL (relative URLs only)
 
         The date function supports the standard Salesforce DateTime format.
 

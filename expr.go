@@ -55,7 +55,7 @@ func escapeUnicode(s string) string {
 	return result.String()
 }
 
-func exprFunctions() []expr.Option {
+func exprFunctions(session BulkSession) []expr.Option {
 	var exprFunctions []expr.Option
 	exprFunctions = append(exprFunctions, expr.Function(
 		"base64",
@@ -297,14 +297,48 @@ func exprFunctions() []expr.Option {
 		},
 	))
 
+	// fetch retrieves content from a URL. If the URL is relative, it's fetched from the Salesforce instance.
+	exprFunctions = append(exprFunctions, expr.Function(
+		"fetch",
+		func(params ...any) (any, error) {
+			url := params[0].(string)
+
+			var content []byte
+			var err error
+
+			// Check if URL is absolute or relative
+			if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+				// Absolute URL - fetch directly
+				// Note: This will only work for URLs that don't require authentication
+				// For authenticated external URLs, you'd need to implement custom logic
+				return nil, fmt.Errorf("external URLs not supported in fetch function")
+			} else {
+				// Relative URL - fetch from Salesforce instance
+				// Ensure the URL starts with /
+				if !strings.HasPrefix(url, "/") {
+					url = "/" + url
+				}
+
+				content, err = session.GetAbsoluteBytes(url)
+				if err != nil {
+					return nil, fmt.Errorf("failed to fetch from Salesforce: %w", err)
+				}
+			}
+
+			// Return as string for now - can be used with base64() function
+			return string(content), nil
+		},
+		new(func(string) string),
+	))
+
 	exprFunctions = append(exprFunctions, expr.Operator("+", "MergePatch"))
 	exprFunctions = append(exprFunctions, expr.Operator("-", "DeleteKey"))
 
 	return exprFunctions
 }
 
-func exprConverter(expression string, context any) (func(force.ForceRecord) []force.ForceRecord, error) {
-	program, err := expr.Compile(expression, append(exprFunctions(), expr.Env(Env{}))...)
+func exprConverter(expression string, context any, session BulkSession) (func(force.ForceRecord) []force.ForceRecord, error) {
+	program, err := expr.Compile(expression, append(exprFunctions(session), expr.Env(Env{}))...)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid expression: %w", err)
 	}

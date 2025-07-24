@@ -2,6 +2,7 @@ package batch
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -133,6 +134,10 @@ func (f *fakeSession) GetBatches(jobID string) ([]force.BatchInfo, error) {
 
 func (f *fakeSession) RetrieveBulkBatchResults(jobID, batchID string) (force.BatchResult, error) {
 	return force.BatchResult{}, nil
+}
+
+func (f *fakeSession) GetAbsoluteBytes(url string) ([]byte, error) {
+	return nil, fmt.Errorf("GetAbsoluteBytes not implemented in fakeSession")
 }
 
 // TestExecuteContext_WaitsForClose ensures ExecuteContext does not return until CloseBulkJob completes, even if context is canceled.

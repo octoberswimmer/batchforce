@@ -39,6 +39,8 @@ type BulkSession interface {
 	GetBatches(jobID string) ([]force.BatchInfo, error)
 	// RetrieveBulkBatchResults fetches the results for a given batch.
 	RetrieveBulkBatchResults(jobID, batchID string) (force.BatchResult, error)
+	// GetAbsoluteBytes fetches raw bytes from a Salesforce endpoint.
+	GetAbsoluteBytes(url string) ([]byte, error)
 }
 
 // Execution holds configuration for running a Bulk API job.
@@ -133,7 +135,7 @@ func (e *Execution) ExecuteContext(ctx context.Context) (Result, error) {
 		}
 	}
 	if e.Expr != "" {
-		e.Converter, err = exprConverter(e.Expr, apexContext)
+		e.Converter, err = exprConverter(e.Expr, apexContext, e.Session)
 		if err != nil {
 			return nil, fmt.Errorf("Expr error: %w", err)
 		}

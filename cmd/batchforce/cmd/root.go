@@ -84,6 +84,7 @@ var RootCmd = &cobra.Command{
 	- incr: increments the number stored at key by one. set to 1 if not set.
 	- clone: create a copy of the record
 	- readfile: reads a file from the filesystem and returns its content as a string
+	- fetch: retrieves content from a Salesforce URL (relative URLs only)
 
 	The date function supports the standard Salesforce DateTime format.
 
