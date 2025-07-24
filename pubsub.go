@@ -1,3 +1,5 @@
+//go:build !wasm
+
 package batch
 
 import (
@@ -19,11 +21,11 @@ func (u uncheckableResult) NumberRecordsFailed() int {
 	return 0
 }
 
-func PublishTo(session *force.Force, channel string) RecordWriter {
+func PublishTo(session *force.Force, eventChannel string) RecordWriter {
 	return func(ctx context.Context, records <-chan force.ForceRecord) (Result, error) {
 		force.Log = log.StandardLogger()
 		res := uncheckableResult{}
-		err := pubsub.PublishMessagesWithContext(ctx, session, channel, records)
+		err := pubsub.PublishMessagesWithContext(ctx, session, eventChannel, records)
 		return res, err
 	}
 }
