@@ -1,11 +1,9 @@
 package batch
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	force "github.com/ForceCLI/force/lib"
-	"github.com/benhoyt/goawk/interp"
 	anon "github.com/octoberswimmer/batchforce/apex"
 	"strings"
 )
@@ -20,36 +18,50 @@ func (e *Execution) getApexContext() (map[string]any, error) {
 	for _, v := range apexVars {
 		lines = append(lines, fmt.Sprintf(`b_f_c_t_x.put('%s', %s);`, v, v))
 	}
-	lines = append(lines, `System.debug(JSON.serialize(b_f_c_t_x));`)
+	// Throw an exception with the JSON data to retrieve it via Tooling API
+	lines = append(lines, `throw new System.HandledException('BATCHFORCE_CONTEXT:' + JSON.serialize(b_f_c_t_x));`)
 	apex = apex + strings.Join(lines, "\n")
 
-	// retrieve underlying *force.Force for Partner API calls
+	// retrieve underlying *force.Force
 	fs, ok := e.session().(*force.Force)
 	if !ok {
 		return nil, fmt.Errorf("session is not a *force.Force")
 	}
-	debugLog, err := fs.Partner.ExecuteAnonymous(apex)
-	if err != nil {
-		return nil, err
-	}
-	val, err := varFromDebugLog(debugLog)
-	if err != nil {
-		return nil, err
-	}
-	var n map[string]any
-	err = json.Unmarshal(val, &n)
-	if err != nil {
-		return nil, err
-	}
-	return n, nil
-}
 
-func varFromDebugLog(log string) ([]byte, error) {
-	input := strings.NewReader(log)
-	output := new(bytes.Buffer)
-	err := interp.Exec(`$2~/USER_DEBUG/ { var = $5 } END { print var }`, "|", input, output)
+	// Use Tooling API for ExecuteAnonymous (works in WASM)
+	result, err := fs.ExecuteAnonymousTooling(apex)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute anonymous apex: %v", err)
 	}
-	return output.Bytes(), nil
+
+	// Check if we got our expected exception with the context data
+	if !result.Success && result.ExceptionMessage != "" {
+		// Look for our marker in the exception message (may have exception type prefix)
+		marker := "BATCHFORCE_CONTEXT:"
+		idx := strings.Index(result.ExceptionMessage, marker)
+		if idx != -1 {
+			// Extract the JSON from the exception message
+			jsonStr := result.ExceptionMessage[idx+len(marker):]
+			var n map[string]any
+			err = json.Unmarshal([]byte(jsonStr), &n)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse context JSON: %v", err)
+			}
+			return n, nil
+		}
+		// This is a real exception, not our context data
+		return nil, fmt.Errorf("execution error: %s", result.ExceptionMessage)
+	}
+
+	// If no exception was thrown (no variables to extract), return empty map
+	if result.Success {
+		return map[string]any{}, nil
+	}
+
+	// Handle compilation errors
+	if result.CompileProblem != "" {
+		return nil, fmt.Errorf("compilation error: %s", result.CompileProblem)
+	}
+
+	return nil, fmt.Errorf("execution failed")
 }

@@ -5,9 +5,8 @@ go 1.24
 toolchain go1.24.4
 
 require (
-	github.com/ForceCLI/force v1.1.0
+	github.com/ForceCLI/force v1.1.1
 	github.com/antlr4-go/antlr/v4 v4.13.1
-	github.com/benhoyt/goawk v1.21.0
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/clbanning/mxj v1.8.4
 	github.com/expr-lang/expr v1.17.5
