@@ -349,6 +349,30 @@ func (e *Execution) updateSalesforce(ctx context.Context, records <-chan force.F
 
 	batch := make(Batch, 0, e.BatchSize)
 
+	// Start a goroutine to monitor progress during batch addition
+	stopEarlyMonitoring := make(chan struct{})
+	earlyMonitoringDone := make(chan struct{})
+	go func() {
+		defer close(earlyMonitoringDone)
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stopEarlyMonitoring:
+				return
+			case <-ticker.C:
+				if job.Id != "" {
+					currentJob, err := e.Session.GetJobInfo(job.Id)
+					if err == nil {
+						log.Info(fmt.Sprintf("Progress: Records Processed: %d | Batches In Progress: %d",
+							currentJob.NumberRecordsProcessed, currentJob.NumberBatchesInProgress))
+					}
+				}
+			}
+		}
+	}()
+
 	sendBatch := func() error {
 		updates, err := batch.marshallForBulkJob(job)
 		if err != nil {
@@ -362,6 +386,7 @@ func (e *Execution) updateSalesforce(ctx context.Context, records <-chan force.F
 		batch = make(Batch, 0, e.BatchSize)
 		return nil
 	}
+
 	waitForRecord := 5 * time.Second
 	recordTimer := time.NewTimer(waitForRecord)
 	defer recordTimer.Stop()
@@ -380,6 +405,8 @@ RECORDS:
 			if job.Id == "" {
 				job, err = e.startJob()
 				if err != nil {
+					close(stopEarlyMonitoring)
+					<-earlyMonitoringDone
 					return BulkJobResult{JobInfo: job}, err
 				}
 				log.Infof("Created job %s", job.Id)
@@ -396,21 +423,31 @@ RECORDS:
 			log.Info("Waiting for record to add to batch")
 		}
 	}
+
+	// Send any remaining records in the batch
 	if len(batch) > 0 {
 		err := sendBatch()
 		if err != nil {
 			log.Error(err.Error())
 		}
 	}
+
+	// Stop early monitoring
+	close(stopEarlyMonitoring)
+	<-earlyMonitoringDone
+
 	if job.Id == "" {
 		log.Info("Bulk job not started")
 		return BulkJobResult{JobInfo: job}, err
 	}
+
 	log.Info("Closing bulk job")
 	job, err = e.Session.CloseBulkJobWithContext(context.Background(), job.Id)
 	if err != nil {
 		return BulkJobResult{JobInfo: job}, fmt.Errorf("Failed to close bulk job: %w", err)
 	}
+
+	// Now poll for job completion as in the original code
 	for {
 		job, err = e.Session.GetJobInfo(job.Id)
 		if err != nil {
@@ -426,6 +463,7 @@ RECORDS:
 		}
 		time.Sleep(2000 * time.Millisecond)
 	}
+
 	return BulkJobResult{JobInfo: job}, nil
 }
 
