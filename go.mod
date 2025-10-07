@@ -9,11 +9,11 @@ require (
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/clbanning/mxj v1.8.4
+	github.com/cwarden/go-csv-map v0.0.0-20160524001940-792523c65ae9
 	github.com/expr-lang/expr v1.17.5
 	github.com/grokify/html-strip-tags-go v0.0.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/octoberswimmer/apexfmt v0.0.0-20250107235655-a1abbc5b8345
-	github.com/recursionpharma/go-csv-map v0.0.0-20160524001940-792523c65ae9
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.8.4

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	force "github.com/ForceCLI/force/lib"
-	csvmap "github.com/recursionpharma/go-csv-map"
+	csvmap "github.com/cwarden/go-csv-map"
 	log "github.com/sirupsen/logrus"
 )
 
