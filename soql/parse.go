@@ -41,7 +41,7 @@ func newRelationshipListener() *relationshipListener {
 func (l *relationshipListener) EnterSubQuery(ctx *parser.SubQueryContext) {
 	for _, v := range ctx.FromNameList().AllFieldNameAlias() {
 		relName := ""
-		if alias := v.SoqlId(); alias != nil {
+		if alias := v.SoqlSelectAlias(); alias != nil {
 			relName = alias.GetText()
 		} else {
 			relName = v.FieldName().GetText()
