@@ -1,13 +1,19 @@
+SHELL := /bin/bash
+
 VERSION=$(shell git describe --abbrev=0 --always)
 LDFLAGS = -ldflags "-s -w -X github.com/octoberswimmer/batchforce.Version=${VERSION}"
 EXECUTABLE=batchforce
 PACKAGE=./cmd/batchforce
-WINDOWS=$(EXECUTABLE)-windows-amd64.exe
-LINUX=$(EXECUTABLE)-linux-amd64
-OSX_AMD64=$(EXECUTABLE)-darwin-amd64
-OSX_ARM64=$(EXECUTABLE)-darwin-arm64
+WINDOWS=$(EXECUTABLE)_windows_amd64.exe
+WINDOWS_ARM64=$(EXECUTABLE)_windows_arm64.exe
+LINUX=$(EXECUTABLE)_linux_amd64
+LINUX_ARM64=$(EXECUTABLE)_linux_arm64
+DARWIN_AMD64=$(EXECUTABLE)_darwin_amd64
+DARWIN_ARM64=$(EXECUTABLE)_darwin_arm64
 EMBEDDED=cmd/batchforce/cmd/docs/language-definition.md
-ALL=$(WINDOWS) $(LINUX) $(OSX_ARM64) $(OSX_AMD64)
+ALL=$(WINDOWS) $(WINDOWS_ARM64) $(LINUX) $(LINUX_ARM64) $(DARWIN_AMD64) $(DARWIN_ARM64)
+ZIPS=$(addsuffix _$(VERSION).zip,$(basename $(ALL)))
+RELEASE_ASSETS=$(ZIPS) SHA256SUMS-$(VERSION)
 
 default: $(EMBEDDED)
 	go build -o ${EXECUTABLE} ${LDFLAGS} ${PACKAGE}
@@ -15,50 +21,80 @@ default: $(EMBEDDED)
 install: $(EMBEDDED)
 	go install ${LDFLAGS} ${PACKAGE}
 
-#$(WINDOWS): checkcmd-x86_64-w64-mingw32-gcc checkcmd-x86_64-w64-mingw32-g++
-#	env \
-#		GOOS=windows \
-#		GOARCH=amd64 \
-#		CC=x86_64-w64-mingw32-gcc \
-#		CXX=x86_64-w64-mingw32-g++ \
-#		CGO_ENABLED=1 \
-#		CGO_CFLAGS=-D_WIN32_WINNT=0x0400 \
-#		CGO_CXXFLAGS=-D_WIN32_WINNT=0x0400 \
-#		go build -v -o $(WINDOWS) ${LDFLAGS} ${PACKAGE}
+$(WINDOWS): $(EMBEDDED)
+	env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -v -o $(WINDOWS) ${LDFLAGS} ${PACKAGE}
 
-$(WINDOWS): checkcmd-xgo $(EMBEDDED)
-	xgo -go 1.21 -out $(EXECUTABLE) -dest . ${LDFLAGS} -buildmode default -trimpath -targets windows/amd64 -pkg ${PACKAGE} -x .
+$(WINDOWS_ARM64): $(EMBEDDED)
+	env CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -v -o $(WINDOWS_ARM64) ${LDFLAGS} ${PACKAGE}
 
-$(LINUX): checkcmd-x86_64-linux-gnu-gcc checkcmd-x86_64-linux-gnu-g++ $(EMBEDDED)
-	env \
-		GOOS=linux \
-		GOARCH=amd64 \
-		CC=x86_64-linux-gnu-gcc \
-		CXX=x86_64-linux-gnu-g++ \
-		CGO_ENABLED=1 \
-		go build -v -o $(LINUX) ${LDFLAGS} ${PACKAGE}
+$(LINUX): $(EMBEDDED)
+	env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -o $(LINUX) ${LDFLAGS} ${PACKAGE}
 
-# Build macOS binaries using docker images that contain SDK
-# See https://github.com/crazy-max/xgo and https://github.com/tpoechtrager/osxcross
-$(OSX_ARM64): checkcmd-xgo $(EMBEDDED)
-	xgo -go 1.21 -out $(EXECUTABLE) -dest . ${LDFLAGS} -buildmode default -trimpath -targets darwin/arm64 -pkg ${PACKAGE} -x .
+$(LINUX_ARM64): $(EMBEDDED)
+	env CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -v -o $(LINUX_ARM64) ${LDFLAGS} ${PACKAGE}
 
-$(OSX_AMD64): checkcmd-xgo $(EMBEDDED)
-	xgo -go 1.21 -out $(EXECUTABLE) -dest . ${LDFLAGS} -buildmode default -trimpath -targets darwin/amd64 -pkg ${PACKAGE} -x .
+$(DARWIN_AMD64): $(EMBEDDED)
+	env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -v -o $(DARWIN_AMD64) ${LDFLAGS} ${PACKAGE}
+	rcodesign sign --for-notarization --pem-file <(pass OctoberSwimmer/codesign/combined) $@
 
-$(basename $(WINDOWS)).zip: $(WINDOWS)
+$(DARWIN_ARM64): $(EMBEDDED)
+	env CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -v -o $(DARWIN_ARM64) ${LDFLAGS} ${PACKAGE}
+	rcodesign sign --for-notarization --pem-file <(pass OctoberSwimmer/codesign/combined) $@
+
+$(basename $(WINDOWS))_$(VERSION).zip: $(WINDOWS)
+	@rm -f $@
 	zip $@ $<
 	7za rn $@ $< $(EXECUTABLE)$(suffix $<)
 
-%.zip: %
+$(basename $(WINDOWS_ARM64))_$(VERSION).zip: $(WINDOWS_ARM64)
+	@rm -f $@
+	zip $@ $<
+	7za rn $@ $< $(EXECUTABLE)$(suffix $<)
+
+$(basename $(DARWIN_AMD64))_$(VERSION).zip: $(DARWIN_AMD64)
+	@rm -f $@
+	zip $@ $<
+	7za rn $@ $< $(EXECUTABLE)
+	rcodesign notary-submit --api-key-file <(pass OctoberSwimmer/codesign/api-key) $@
+
+$(basename $(DARWIN_ARM64))_$(VERSION).zip: $(DARWIN_ARM64)
+	@rm -f $@
+	zip $@ $<
+	7za rn $@ $< $(EXECUTABLE)
+	rcodesign notary-submit --api-key-file <(pass OctoberSwimmer/codesign/api-key) $@
+
+%_$(VERSION).zip: %
+	@rm -f $@
 	zip $@ $<
 	7za rn $@ $< $(EXECUTABLE)
 
-dist: test $(addsuffix .zip,$(basename $(ALL)))
+dist: test $(ZIPS)
+
+checksum: dist
+	shasum -a 256 $(ZIPS) > SHA256SUMS-$(VERSION)
+
+release: checksum
+	@if ! command -v gh >/dev/null 2>&1; then \
+		echo "gh CLI is required for 'make release'."; \
+		exit 1; \
+	fi
+	@if ! git rev-parse --verify "refs/tags/$(VERSION)" >/dev/null 2>&1; then \
+		echo "Tag '$(VERSION)' does not exist. Create the tag before running 'make release'."; \
+		exit 1; \
+	fi
+	@if [ "$$(git describe --exact-match --tags HEAD 2>/dev/null)" != "$(VERSION)" ]; then \
+		echo "HEAD is not exactly at tag '$(VERSION)'. Check out the tag before running 'make release'."; \
+		exit 1; \
+	fi
+	git push octoberswimmer "$(VERSION)"
+	gh release create "$(VERSION)" --title "batchforce $(VERSION)" --notes-from-tag --verify-tag $(RELEASE_ASSETS)
 
 # Update embedded Expr language definition
 $(EMBEDDED):
 	go generate ./cmd/batchforce/cmd
+
+fmt:
+	go fmt ./...
 
 test: $(EMBEDDED)
 	test -z "$(go fmt)"
@@ -69,11 +105,7 @@ test: $(EMBEDDED)
 docs:
 	go run docs/mkdocs.go
 
-checkcmd-%:
-	@hash $(*) > /dev/null 2>&1 || \
-		(echo "ERROR: '$(*)' must be installed and available on your PATH."; exit 1)
-
 clean:
-	-rm -f $(EXECUTABLE) $(EXECUTABLE)_*
+	-rm -f $(EXECUTABLE) $(EXECUTABLE)_* *.zip SHA256SUMS-*
 
-.PHONY: default dist clean docs
+.PHONY: default dist clean docs checksum release fmt test
