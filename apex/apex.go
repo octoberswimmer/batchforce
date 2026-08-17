@@ -27,10 +27,25 @@ func (e *errorListener) SyntaxError(_ antlr.Recognizer, _ interface{}, line, col
 
 type varListener struct {
 	*parser.BaseApexParserListener
-	vars []string
+	vars       []string
+	blockDepth int
+}
+
+func (l *varListener) EnterBlock(ctx *parser.BlockContext) {
+	l.blockDepth++
+}
+
+func (l *varListener) ExitBlock(ctx *parser.BlockContext) {
+	l.blockDepth--
 }
 
 func (l *varListener) EnterLocalVariableDeclarationStatement(ctx *parser.LocalVariableDeclarationStatementContext) {
+	// Only variables declared at the top level of the anonymous apex
+	// (the wrapper method's body) remain in scope at the end of the
+	// script; ignore declarations in nested blocks like loop bodies.
+	if l.blockDepth != 1 {
+		return
+	}
 	for _, v := range ctx.LocalVariableDeclaration().VariableDeclarators().AllVariableDeclarator() {
 		varName := v.Id().GetText()
 		l.vars = append(l.vars, varName)

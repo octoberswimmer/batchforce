@@ -64,3 +64,34 @@ Integer z = 10;
 	assert.Nil(t, err)
 	assert.ElementsMatch(t, []string{"numbers", "accounts", "y", "z"}, last)
 }
+
+func TestVarsIgnoresNestedScopes(t *testing.T) {
+	last, err := Vars(`
+Map<String, Zip_Code__c> zipMap = new Map<String, Zip_Code__c>();
+for (Zip_Code__c z : [SELECT Name FROM Zip_Code__c]) {
+	String k = z.Name.trim();
+	if (k.length() > 5) { k = k.substring(0, 5); }
+	if (!zipMap.containsKey(k)) { zipMap.put(k, z); }
+}
+	`)
+	assert.Nil(t, err)
+	assert.Equal(t, []string{"zipMap"}, last)
+
+	last, err = Vars(`
+Integer total = 0;
+if (total == 0) {
+	Integer hidden = 1;
+	total += hidden;
+}
+while (total < 10) {
+	Integer step = 2;
+	total += step;
+}
+{
+	Integer scoped = 3;
+}
+String kept = 'x';
+	`)
+	assert.Nil(t, err)
+	assert.ElementsMatch(t, []string{"total", "kept"}, last)
+}
