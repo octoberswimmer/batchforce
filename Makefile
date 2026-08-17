@@ -88,6 +88,7 @@ release: checksum
 	fi
 	git push octoberswimmer "$(VERSION)"
 	gh release create "$(VERSION)" --title "batchforce $(VERSION)" --notes-from-tag --verify-tag $(RELEASE_ASSETS)
+	brew bump-cask-pr batchforce --version $(VERSION:v%=%)
 
 # Update embedded Expr language definition
 $(EMBEDDED):
