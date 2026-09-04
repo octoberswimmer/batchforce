@@ -186,3 +186,82 @@ func TestExpressionFunctionsWithSession(t *testing.T) {
 	// Verify that functions are returned
 	assert.NotEmpty(t, functions, "exprFunctions should return expression options")
 }
+
+func TestMergeOperator(t *testing.T) {
+	tests := []struct {
+		name       string
+		expression string
+		expected   force.ForceRecord
+	}{
+		{
+			name:       "merge map literals",
+			expression: `{Id: record.Id} + {Name: "Merged"}`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "Name": "Merged"},
+		},
+		{
+			name:       "merge record with map literal",
+			expression: `record + {Name: "Merged"}`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "Name": "Merged"},
+		},
+		{
+			name:       "chain merges of map literals",
+			expression: `{Id: record.Id} + {Name: "Merged"} + {Type: "Prospect"}`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "Name": "Merged", "Type": "Prospect"},
+		},
+		{
+			name:       "right side wins on conflicting keys",
+			expression: `{Id: record.Id, Name: "First"} + {Name: "Second"}`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "Name": "Second"},
+		},
+		{
+			name:       "conditionally merge an empty map",
+			expression: `{Id: record.Id} + (record.Name == "Test" ? {Type: "Prospect"} : {})`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "Type": "Prospect"},
+		},
+		{
+			name:       "delete a key from a map literal",
+			expression: `{Id: record.Id, Name: "x"} - "Name"`,
+			expected:   force.ForceRecord{"Id": "001000000000000"},
+		},
+		{
+			name:       "delete a key from a merged map",
+			expression: `{Id: record.Id} + {Name: "x", Type: "Prospect"} - "Name"`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "Type": "Prospect"},
+		},
+		{
+			name:       "delete a key the record does not have",
+			expression: `{Id: record.Id} - "Name"`,
+			expected:   force.ForceRecord{"Id": "001000000000000"},
+		},
+		{
+			name:       "delete a key from the queried record",
+			expression: `record - "Name"`,
+			expected:   force.ForceRecord{"Id": "001000000000000"},
+		},
+		{
+			name:       "arithmetic is unaffected by the operator overloads",
+			expression: `{Id: record.Id, NumberOfEmployees: 3 + 4 - 2}`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "NumberOfEmployees": 5},
+		},
+		{
+			name:       "merging leaves the queried record unmodified",
+			expression: `({Id: record.Id} + {Name: "Merged"}) != nil ? {Id: record.Id, Name: record.Name} : nil`,
+			expected:   force.ForceRecord{"Id": "001000000000000", "Name": "Test"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			converter, err := exprConverter(tt.expression, nil, new(MockBulkSession))
+			assert.NoError(t, err, "Failed to create expression converter")
+
+			results := converter(force.ForceRecord{
+				"Id":   "001000000000000",
+				"Name": "Test",
+			})
+
+			assert.Len(t, results, 1)
+			assert.Equal(t, tt.expected, results[0])
+		})
+	}
+}

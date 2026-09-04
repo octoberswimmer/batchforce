@@ -37,9 +37,35 @@ func (Env) MergePatch(a force.ForceRecord, b map[string]any) force.ForceRecord {
 	return a
 }
 
+// MergeMaps supports the + operator between two maps, so that a record can be
+// built up from map literals instead of starting from the queried record.
+func (Env) MergeMaps(a map[string]any, b map[string]any) map[string]any {
+	merged := make(map[string]any, len(a)+len(b))
+	for k, v := range a {
+		merged[k] = v
+	}
+	for k, v := range b {
+		merged[k] = v
+	}
+	return merged
+}
+
 func (Env) DeleteKey(a force.ForceRecord, b string) force.ForceRecord {
 	delete(a, b)
 	return a
+}
+
+// DeleteMapKey supports the - operator on a map built from map literals rather
+// than from the queried record.
+func (Env) DeleteMapKey(a map[string]any, b string) map[string]any {
+	remaining := make(map[string]any, len(a))
+	for k, v := range a {
+		if k == b {
+			continue
+		}
+		remaining[k] = v
+	}
+	return remaining
 }
 
 // Escape any non-ASCII characters like Apex's String.escapeUnicode.
@@ -331,8 +357,8 @@ func exprFunctions(session BulkSession) []expr.Option {
 		new(func(string) string),
 	))
 
-	exprFunctions = append(exprFunctions, expr.Operator("+", "MergePatch"))
-	exprFunctions = append(exprFunctions, expr.Operator("-", "DeleteKey"))
+	exprFunctions = append(exprFunctions, expr.Operator("+", "MergePatch", "MergeMaps"))
+	exprFunctions = append(exprFunctions, expr.Operator("-", "DeleteKey", "DeleteMapKey"))
 
 	return exprFunctions
 }

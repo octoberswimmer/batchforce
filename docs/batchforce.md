@@ -33,12 +33,19 @@ Use Bulk API to update Salesforce records
 	- incr: increments the number stored at key by one. set to 1 if not set.
 	- clone: create a copy of the record
 	- readfile: reads a file from the filesystem and returns its content as a string
+	- fetch: retrieves content from a Salesforce URL (relative URLs only)
 
 	The date function supports the standard Salesforce DateTime format.
 
 	The + and - operators can be used to add, update, or remove fields on the
 	record object.  For example:
 	record + {RecordTypeId: apex.myRecordTypeId} - "RecordType.Name"
+
+	Both operators also work on a map that did not come from the queried record,
+	so a record can be built up from map literals instead.  Values on the right
+	win, and merging an empty map is a no-op, which makes a field conditional.
+	For example:
+	{Id: record.Id} + (record.Type == "Prospect" ? {Rating: "Warm"} : {})
 
 	If creating multiple records from a source record, use clone to avoid mutating
 	the same object repeatedly.  For example:

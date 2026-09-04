@@ -92,6 +92,12 @@ var RootCmd = &cobra.Command{
 	record object.  For example:
 	record + {RecordTypeId: apex.myRecordTypeId} - "RecordType.Name"
 
+	Both operators also work on a map that did not come from the queried record,
+	so a record can be built up from map literals instead.  Values on the right
+	win, and merging an empty map is a no-op, which makes a field conditional.
+	For example:
+	{Id: record.Id} + (record.Type == "Prospect" ? {Rating: "Warm"} : {})
+
 	If creating multiple records from a source record, use clone to avoid mutating
 	the same object repeatedly.  For example:
 	1..100 | map(clone(record) + {Name: "Record " + string(#)})
