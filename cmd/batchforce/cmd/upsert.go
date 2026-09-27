@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	. "github.com/octoberswimmer/batchforce"
@@ -25,13 +24,8 @@ $ batchforce upsert --file accounts.csv Account '{Name: record.Name + " Copy"}'
 		}
 		externalId, _ := cmd.Flags().GetString("external-id")
 		execution.JobOptions = append(execution.JobOptions, Upsert, ExternalId(externalId))
-		errors := execution.RunContext(cmd.Context())
-		if errors.NumberBatchesFailed() > 0 {
-			fmt.Println(errors.NumberBatchesFailed(), "batch failures")
-			os.Exit(1)
-		}
-		if errors.NumberRecordsFailed() > 0 {
-			fmt.Println(errors.NumberRecordsFailed(), "record failures")
+		result := execution.RunContext(cmd.Context())
+		if reportFailures(os.Stdout, result) {
 			os.Exit(1)
 		}
 		return nil

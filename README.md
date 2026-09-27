@@ -72,6 +72,18 @@ $ batchforce update ContentVersion --query "SELECT Id, VersionData FROM ContentV
 
 This example fetches the binary content from a ContentVersion's VersionData field and encodes it as base64.
 
+## Failed Records
+
+When the Bulk API rejects records, batchforce retrieves the results of each
+batch with failures and prints each failed record on stdout as a line of JSON,
+with the record as submitted and the errors Salesforce returned, followed by
+the number of failures.  It then exits with status 1.
+
+```
+{"batchId":"751xx0000000001AAA","record":{"External_Id__c":"C-1001","FirstName":"Jane","LastName":"Doe","MailingPostalCode":""},"errors":[{"statusCode":"FIELD_CUSTOM_VALIDATION_EXCEPTION","message":"Enter a postal code for the contact.","fields":["MailingPostalCode"]}]}
+1 record failures
+```
+
 See [docs/batchforce.md](docs/batchforce.md) for all supported commands and the
 [wiki](https://github.com/octoberswimmer/batchforce/wiki) for more examples.
 

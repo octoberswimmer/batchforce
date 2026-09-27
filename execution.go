@@ -275,6 +275,9 @@ func (e *Execution) update(ctx context.Context, records <-chan force.ForceRecord
 
 type BulkJobResult struct {
 	force.JobInfo
+	// Failures lists the records the Bulk API rejected.  It is only filled
+	// in when the job reports failed records.
+	Failures []RecordFailure
 }
 
 func (b BulkJobResult) NumberBatchesFailed() int {
@@ -283,6 +286,83 @@ func (b BulkJobResult) NumberBatchesFailed() int {
 
 func (b BulkJobResult) NumberRecordsFailed() int {
 	return b.JobInfo.NumberRecordsFailed
+}
+
+func (b BulkJobResult) RecordFailures() []RecordFailure {
+	return b.Failures
+}
+
+// FailureLister is implemented by a Result that can list the records that
+// failed.
+type FailureLister interface {
+	RecordFailures() []RecordFailure
+}
+
+// RecordFailure is a record the Bulk API rejected and the errors it returned.
+// Record is nil when the submitted batch could not be retrieved.
+type RecordFailure struct {
+	BatchId string              `json:"batchId"`
+	Record  force.ForceRecord   `json:"record,omitempty"`
+	Errors  []force.ResultError `json:"errors"`
+}
+
+// bulkRequestRetriever retrieves a batch as it was submitted.  *force.Force
+// implements it.  It is not part of BulkSession so that existing BulkSession
+// implementations do not have to add it.
+type bulkRequestRetriever interface {
+	RetrieveBulkRequest(jobId string, batchId string) ([]byte, error)
+}
+
+// recordFailures retrieves the results of each batch with failed records and
+// pairs each failure with the record submitted.  The Bulk API returns a
+// batch's results in the order its records were submitted.
+func (e *Execution) recordFailures(job force.JobInfo) ([]RecordFailure, error) {
+	batches, err := e.Session.GetBatches(job.Id)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to retrieve batches: %w", err)
+	}
+	var failures []RecordFailure
+	for _, b := range batches {
+		if b.NumberRecordsFailed == 0 {
+			continue
+		}
+		results, err := e.Session.RetrieveBulkBatchResults(job.Id, b.Id)
+		if err != nil {
+			return failures, fmt.Errorf("Failed to retrieve results of batch %s: %w", b.Id, err)
+		}
+		records := e.batchRecords(job, b.Id)
+		for i, r := range results {
+			if r.Success {
+				continue
+			}
+			failure := RecordFailure{BatchId: b.Id, Errors: r.Errors}
+			if i < len(records) {
+				failure.Record = records[i]
+			}
+			failures = append(failures, failure)
+		}
+	}
+	return failures, nil
+}
+
+// batchRecords returns the records submitted in a batch, or nil if they
+// cannot be retrieved.
+func (e *Execution) batchRecords(job force.JobInfo, batchId string) []force.ForceRecord {
+	retriever, ok := e.Session.(bulkRequestRetriever)
+	if !ok || !strings.EqualFold(job.ContentType, "JSON") {
+		return nil
+	}
+	body, err := retriever.RetrieveBulkRequest(job.Id, batchId)
+	if err != nil {
+		log.Warnf("Failed to retrieve records of batch %s: %s", batchId, err)
+		return nil
+	}
+	var records []force.ForceRecord
+	if err := json.Unmarshal(body, &records); err != nil {
+		log.Warnf("Failed to parse records of batch %s: %s", batchId, err)
+		return nil
+	}
+	return records
 }
 
 type dryRunResult struct {
@@ -464,7 +544,14 @@ RECORDS:
 		time.Sleep(2000 * time.Millisecond)
 	}
 
-	return BulkJobResult{JobInfo: job}, nil
+	result := BulkJobResult{JobInfo: job}
+	if job.NumberRecordsFailed > 0 {
+		result.Failures, err = e.recordFailures(job)
+		if err != nil {
+			log.Warnf("Failed to retrieve failed records: %s", err)
+		}
+	}
+	return result, nil
 }
 
 func processRecords(ctx context.Context, input <-chan force.ForceRecord, output chan<- force.ForceRecord, converter Converter, cancel func()) (err error) {

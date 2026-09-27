@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -23,13 +22,8 @@ $ batchforce update --query "SELECT Id, Type__c FROM Account WHERE RecordType.De
 		if err != nil {
 			return err
 		}
-		errors := execution.RunContext(cmd.Context())
-		if errors.NumberBatchesFailed() > 0 {
-			fmt.Println(errors.NumberBatchesFailed(), "batch failures")
-			os.Exit(1)
-		}
-		if errors.NumberRecordsFailed() > 0 {
-			fmt.Println(errors.NumberRecordsFailed(), "record failures")
+		result := execution.RunContext(cmd.Context())
+		if reportFailures(os.Stdout, result) {
 			os.Exit(1)
 		}
 		return nil

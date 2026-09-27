@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	. "github.com/octoberswimmer/batchforce"
@@ -31,13 +30,8 @@ $ batchforce delete --query "SELECT Id, Name FROM Account" Account 'record.Name 
 		} else {
 			execution.JobOptions = append(execution.JobOptions, Delete)
 		}
-		errors := execution.RunContext(cmd.Context())
-		if errors.NumberBatchesFailed() > 0 {
-			fmt.Println(errors.NumberBatchesFailed(), "batch failures")
-			os.Exit(1)
-		}
-		if errors.NumberRecordsFailed() > 0 {
-			fmt.Println(errors.NumberRecordsFailed(), "record failures")
+		result := execution.RunContext(cmd.Context())
+		if reportFailures(os.Stdout, result) {
 			os.Exit(1)
 		}
 		return nil

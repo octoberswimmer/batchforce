@@ -611,3 +611,120 @@ func TestExecuteContext_ExprConverterPanic(t *testing.T) {
 		t.Fatalf("expected panic error, got %v", err)
 	}
 }
+
+// failingSession reports one batch whose second record failed.
+type failingSession struct {
+	*fakeSession
+}
+
+func newFailingSession() *failingSession {
+	fake := newFakeSession()
+	close(fake.closeAllow)
+	fake.customGetJobInfo = func(jobID string) (force.JobInfo, error) {
+		return force.JobInfo{
+			Id:                     jobID,
+			ContentType:            "JSON",
+			State:                  "Closed",
+			NumberBatchesTotal:     1,
+			NumberBatchesCompleted: 1,
+			NumberRecordsProcessed: 2,
+			NumberRecordsFailed:    1,
+		}, nil
+	}
+	return &failingSession{fakeSession: fake}
+}
+
+func (f *failingSession) GetBatches(jobID string) ([]force.BatchInfo, error) {
+	return []force.BatchInfo{{Id: "batch-1", JobId: jobID, NumberRecordsProcessed: 2, NumberRecordsFailed: 1}}, nil
+}
+
+func (f *failingSession) RetrieveBulkBatchResults(jobID, batchID string) (force.BatchResult, error) {
+	return force.BatchResult{
+		{Id: "001000000000001", Success: true, Created: true},
+		{Success: false, Errors: []force.ResultError{{
+			StatusCode: "REQUIRED_FIELD_MISSING",
+			Message:    "Required fields are missing: [LastName]",
+			Fields:     []string{"LastName"},
+		}}},
+	}, nil
+}
+
+// requestSession also returns the batch as it was submitted.
+type requestSession struct {
+	*failingSession
+}
+
+func (f *requestSession) RetrieveBulkRequest(jobID, batchID string) ([]byte, error) {
+	return []byte(`[{"External_Id__c":"A"},{"External_Id__c":"B"}]`), nil
+}
+
+func runTwoRecords(t *testing.T, session BulkSession) BulkJobResult {
+	t.Helper()
+	sender := func(ctx context.Context, out chan<- force.ForceRecord) error {
+		out <- force.ForceRecord{"External_Id__c": "A"}
+		out <- force.ForceRecord{"External_Id__c": "B"}
+		close(out)
+		return nil
+	}
+	e := Execution{
+		Session:      session,
+		RecordSender: sender,
+		Converter: func(r force.ForceRecord) []force.ForceRecord {
+			return []force.ForceRecord{r}
+		},
+		BatchSize: 2,
+	}
+	result, err := e.ExecuteContext(context.Background())
+	if err != nil {
+		t.Fatalf("ExecuteContext failed: %v", err)
+	}
+	bulkResult, ok := result.(BulkJobResult)
+	if !ok {
+		t.Fatalf("Expected BulkJobResult, got %T", result)
+	}
+	return bulkResult
+}
+
+func TestExecuteContext_ReportsFailedRecordsWithTheRecordSubmitted(t *testing.T) {
+	result := runTwoRecords(t, &requestSession{failingSession: newFailingSession()})
+
+	failures := result.RecordFailures()
+	if len(failures) != 1 {
+		t.Fatalf("Expected 1 failure, got %d", len(failures))
+	}
+	failure := failures[0]
+	if failure.BatchId != "batch-1" {
+		t.Errorf("Expected batch-1, got %s", failure.BatchId)
+	}
+	if failure.Record["External_Id__c"] != "B" {
+		t.Errorf("Expected the second record submitted, got %v", failure.Record)
+	}
+	if len(failure.Errors) != 1 || failure.Errors[0].StatusCode != "REQUIRED_FIELD_MISSING" {
+		t.Errorf("Unexpected errors: %+v", failure.Errors)
+	}
+}
+
+func TestExecuteContext_ReportsFailedRecordsWithoutTheRecordWhenTheRequestIsUnavailable(t *testing.T) {
+	result := runTwoRecords(t, newFailingSession())
+
+	failures := result.RecordFailures()
+	if len(failures) != 1 {
+		t.Fatalf("Expected 1 failure, got %d", len(failures))
+	}
+	if failures[0].Record != nil {
+		t.Errorf("Expected no record, got %v", failures[0].Record)
+	}
+	if failures[0].Errors[0].Message != "Required fields are missing: [LastName]" {
+		t.Errorf("Unexpected errors: %+v", failures[0].Errors)
+	}
+}
+
+func TestExecuteContext_DoesNotRetrieveResultsWithoutFailedRecords(t *testing.T) {
+	fake := newFakeSession()
+	close(fake.closeAllow)
+	result := runTwoRecords(t, fake)
+
+	if failures := result.RecordFailures(); failures != nil {
+		t.Errorf("Expected no failures, got %+v", failures)
+	}
+}

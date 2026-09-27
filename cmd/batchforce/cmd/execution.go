@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 
 	. "github.com/octoberswimmer/batchforce"
@@ -58,4 +60,30 @@ func getExecution(cmd *cobra.Command, args []string) (*Execution, error) {
 	}
 	execution.JobOptions = jobOptions
 	return execution, nil
+}
+
+// reportFailures writes each failed record as a line of JSON, followed by
+// the number of failed batches and records, and returns whether anything
+// failed.
+func reportFailures(w io.Writer, result Result) bool {
+	failed := false
+	if lister, ok := result.(FailureLister); ok {
+		for _, failure := range lister.RecordFailures() {
+			j, err := json.Marshal(failure)
+			if err != nil {
+				log.Printf("Invalid failure: %s", err.Error())
+				continue
+			}
+			fmt.Fprintln(w, string(j))
+		}
+	}
+	if result.NumberBatchesFailed() > 0 {
+		fmt.Fprintln(w, result.NumberBatchesFailed(), "batch failures")
+		failed = true
+	}
+	if result.NumberRecordsFailed() > 0 {
+		fmt.Fprintln(w, result.NumberRecordsFailed(), "record failures")
+		failed = true
+	}
+	return failed
 }

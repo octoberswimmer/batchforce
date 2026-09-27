@@ -31,13 +31,8 @@ $ batchforce publish --file accounts.csv /event/Account_Change__e '{Id: record.I
 			return fmt.Errorf("cannot use session as *force.Force for publish")
 		}
 		execution.RecordWriter = PublishTo(fs, channel)
-		errors := execution.RunContext(cmd.Context())
-		if errors.NumberBatchesFailed() > 0 {
-			fmt.Println(errors.NumberBatchesFailed(), "batch failures")
-			os.Exit(1)
-		}
-		if errors.NumberRecordsFailed() > 0 {
-			fmt.Println(errors.NumberRecordsFailed(), "record failures")
+		result := execution.RunContext(cmd.Context())
+		if reportFailures(os.Stdout, result) {
 			os.Exit(1)
 		}
 		return nil
